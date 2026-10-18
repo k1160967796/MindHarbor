@@ -1,77 +1,39 @@
 # MindHarbor（心港）
 
-MindHarbor（心港）是一个校园心理健康智能体
+面向校园心理陪伴场景的 Java 智能体项目，使用 Spring Boot、Spring AI 和原生 HTML/CSS/JavaScript，提供多 Agent 路由、RAG、SSE 流式对话、用户画像记忆和后台预警任务。
 
-- 动态路由 RAG：先识别 `CHAT / CONSULT / RISK`，闲聊不查知识库，咨询与风险消息才进入检索增强。
-- SSE 流式输出：`/api/chat/stream` 返回 `text/event-stream`，适合前端做打字机效果。
-- 后台心理状态识别：记录情绪标签、情绪分数、风险等级和置信度，但学生端不展示评估结果。
-- 用户画像记忆：从对话中抽取稳定偏好、沟通方式和支持需求，MySQL 保存可审计记录，Chroma 负责语义召回。
-- 数据闭环：咨询/风险消息写入数据库，高风险先写 Excel，再触发邮件或 HTTP MCP 预警。
-- Spring AI 模型接入：默认通过 `ollama` 调用项目模型，也可按需切到 `openai`。
-- 可替换知识库：默认本地轻量检索，可打开 Chroma 镜像和查询。
-- 多 Agent loop：每轮输入由 MemoryAgent、SupervisorAgent、KnowledgeAgent、RiskGuardianAgent 和回复 Agent 协作完成
+项目用于工程演示与研究，不替代专业心理咨询、诊断或紧急救援。本文描述的是仓库当前实现，不代表已部署的公共服务或经临床验证的效果。
 
-大模型 LoRA 微调、合并、GGUF 转换和 Ollama 接入流程见：[docs/qwen25-7b-lora-finetune-guide.md](docs/qwen25-7b-lora-finetune-guide.md)。
+## 已实现的能力
 
-## 目录
+| 能力 | 当前实现 |
+| --- | --- |
+| 意图路由 | 区分 `CHAT / CONSULT / RISK`；普通学习、编程和校园事务不必进入心理咨询链路 |
+| 多 Agent | 记忆读取、主控路由、知识检索、风险守护、陪伴或咨询回复规划；Agent loop 最多 8 步 |
+| 流式回复 | SSE 输出；可重试的生成失败最多 3 次总尝试；支持按请求 ID 查询、恢复和重新生成 |
+| 检索增强 | BM25、可选向量召回、query 改写、候选评审与重排；资源不可用时保留检索降级路径 |
+| 对话与画像记忆 | H2/MySQL 保存持久记录，Redis 缓存近期对话，Chroma 可用于画像语义召回 |
+| 风险报告与工具任务 | 咨询/风险分支按规则生成后台报告；Excel 与高风险邮件是独立持久化任务，学生回复不等待工具执行 |
+| 邮件跟进 | 支持日志、SMTP 以及独立 MCP/Resend 模式；区分发送受理、投递和辅导员主动确认 |
+| 知识库管理 | 管理员录入文本、上传文件；可选 OCR/视觉解析与图片内容校对、发布 |
+| 管理后台与评测 | 对话记录、报告、工具状态和 Agent 执行轨迹；Java 评测导出及可选 RAGAS 工具 |
 
-```text
-src/main/java/com/mindbridge/agent
-├── config                 # 配置、安全、AI/MCP Bean
-├── controller             # Chat / Knowledge / Report API
-├── domain                 # JPA 实体与枚举
-├── dto                    # 请求与响应对象
-├── repository             # Spring Data JPA
-├── security               # 当前用户与认证查询
-└── service
-	    ├── ai                 # Spring AI 模型适配器与 Prompt
-	    ├── agent              # 多 Agent loop：记忆、路由、知识检索、风险守护与回复规划
-	    ├── knowledge          # 切块、检索、Chroma 网关
-	    ├── memory             # Redis 短期记忆与用户画像长期记忆
-	    └── mcp                # Excel 与邮件/HTTP 预警工具
-```
+项目展示名称为 **MindHarbor**。为兼容已有数据和部署，代码中的 `com.mindbridge` 包名、`mindbridge-*` 构建产物、模型标签及 `MINDBRIDGE_*` 配置名仍沿用原有标识。
 
-## Agent loop 与多 Agent 分工
+## 首次运行：公共模型 + H2
 
-每轮对话进入一个有限步 agent loop，最多执行 8 步，防止心理安全场景中出现无限自主循环：
+先跑通文本聊天，再按需接入 MySQL、向量检索、图片解析或真实邮件。本节不需要项目微调权重、OpenAI Key 或 Resend Key。
 
-```text
-MemoryAgent
--> SupervisorAgent
--> KnowledgeAgent
--> RiskGuardianAgent
--> CompanionAgent / CounselorAgent
-```
+### 1. 准备环境
 
-各 Agent 分工：
+| 软件 | 用途 |
+| --- | --- |
+| JDK 17 | 编译与运行 Java 主应用；确认 `JAVA_HOME` 和 Maven 使用同一 JDK |
+| Maven 3.9+ | 构建与测试；仓库不附带 Maven wrapper 或 `.tools/` 工具包 |
+| Ollama | 本地聊天模型；可使用已安装模型覆盖下方示例 |
+| Docker Compose | 推荐用于启动 Redis；已有 Redis 可复用，没有 Docker 时可使用下文的降级运行方式 |
 
-- `MemoryAgent`：读取 Redis 短期记忆，并用当前输入从 Chroma 召回相关用户画像；Redis 为空时从 MySQL 长期聊天记录恢复。
-- `SupervisorAgent`：调用模型判断 `CHAT / CONSULT / RISK`，决定后续交给普通陪伴还是心理支持链路。
-- `KnowledgeAgent`：调用模型改写 Chroma/RAG 检索 query，并判断检索结果是否足够，不足时二次检索。
-- `RiskGuardianAgent`：调用模型做后台心理状态评估，同时保留高风险词库硬兜底。
-- `CompanionAgent`：调用模型生成普通聊天回复策略，并组装普通助手回复 prompt。
-- `CounselorAgent`：调用模型生成心理支持回复策略，并结合记忆、RAG、风险守护结果组装回复 prompt。
-
-最终回复仍通过 Spring AI 流式调用项目模型输出给学生端；后台风险报告、Excel 和预警工具链仍按安全规则执行。
-
-## 部署与运行
-
-### 1. 环境准备
-
-| 软件 | 版本/用途 | 是否必需 |
-| --- | --- | --- |
-| JDK | 17 | 本地构建或运行 Jar 时必需 |
-| Maven | 3.9+ | 本地构建时必需 |
-| Ollama | 运行本地大模型 | 使用 `AI_PROVIDER=ollama` 时必需 |
-| Docker / Docker Compose | 启动 MySQL、Redis、Chroma 和 Mailpit | 仅容器部署时必需 |
-
-先进入项目根目录：
-
-```bash
-cd /path/to/MindHarbor
-```
-
-可用下列命令检查本地环境：
+下载或克隆仓库后，进入包含 `pom.xml` 的目录。ZIP 解压目录可能叫 `MindHarbor-main`，不必重命名本机目录。
 
 ```bash
 java -version
@@ -80,396 +42,330 @@ ollama --version
 docker compose version
 ```
 
-> 如果发布包中包含 `.tools/` 目录，项目脚本会优先使用其中的 JDK 17 和 Maven；否则使用系统已安装的版本。
+`java -version` 与 `mvn -version` 均应显示 JDK 17。Windows 若仍使用 Java 8，先将 `JAVA_HOME` 指向自己的 JDK 17 安装目录，并更新当前终端的 `PATH`；旧版 Java 无法编译项目使用的 record 和文本块。
 
-### 2. 本地快速运行（适合开发与演示）
-
-默认模型名为 `mindbridge-qwen2.5-7b-ft:latest`。首次使用前，将 GGUF 权重放到下列位置：
-
-```text
-models/mindbridge-qwen2.5-7b-ft/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
-```
-
-然后创建 Ollama 模型并启动项目：
+### 2. 启动 Redis 和模型服务
 
 ```bash
-./scripts/create-finetuned-model.sh
-./scripts/run-dev.sh
+docker compose up -d redis
+ollama pull qwen2.5:1.5b
 ```
 
-`run-dev.sh` 会检查并启动 Ollama，然后通过 Maven 启动 Spring Boot。如果希望使用已安装的其他 Ollama 模型，可在启动时覆盖模型名：
+如果暂不使用 Docker，跳过 Redis 启动命令，并使用下一节的降级运行方式。如果 Ollama 服务尚未运行，在另一个终端执行 `ollama serve`。下载模型不会自动下载本项目的 LoRA 权重；`qwen2.5:1.5b` 在这里仅用于跑通流程，其效果不等于项目微调模型的效果。
 
-```bash
-OLLAMA_MODEL=qwen2.5:7b ./scripts/run-dev.sh
+### 3. 启动应用
+
+**Windows PowerShell：**
+
+```powershell
+$env:AI_PROVIDER = 'ollama'
+$env:OLLAMA_MODEL = 'qwen2.5:1.5b'
+$env:USE_CHROMA = 'false'
+$env:MEMORY_USE_CHROMA = 'false'
+$env:MCP_SERVER_ENABLED = 'false'
+mvn spring-boot:run
 ```
 
-也可以手动分两个终端启动：
-
-```bash
-# 终端 1
-./scripts/start-ollama.sh
-```
-
-```bash
-# 终端 2
-mvn -Dmaven.repo.local=.m2/repository spring-boot:run
-```
-
-这种模式默认使用：
-
-- `./data/mindbridge.mv.db` H2 文件数据库；
-- `./data/mindbridge-reports.xlsx` 高风险报告文件；
-- Ollama 本地模型；
-- 日志模式预警（不真正发送邮件）。
-
-### 3. 打包并运行 Jar（适合服务器部署）
-
-先构建可执行 Jar：
-
-```bash
-mvn -Dmaven.repo.local=.m2/repository clean package
-```
-
-本机启动：
+**macOS / Linux Bash：**
 
 ```bash
 AI_PROVIDER=ollama \
-OLLAMA_BASE_URL=http://127.0.0.1:11434 \
-OLLAMA_MODEL=mindbridge-qwen2.5-7b-ft:latest \
-java -jar target/mindbridge-agent-0.1.0.jar \
-  --server.address=127.0.0.1 \
-  --server.port=8080
+OLLAMA_MODEL=qwen2.5:1.5b \
+USE_CHROMA=false \
+MEMORY_USE_CHROMA=false \
+MCP_SERVER_ENABLED=false \
+mvn spring-boot:run
 ```
 
-如需从其他主机访问，将 `--server.address` 改为 `0.0.0.0`，并在防火墙或反向代理中放行对应端口。生产环境建议使用 systemd 等进程管理工具，并由 Nginx 或网关提供 HTTPS。
+此模式使用 `data/mindbridge.mv.db` 保存 H2 数据，Redis 可用时缓存近期对话；没有 embedding 配置时，知识检索使用本地 BM25。默认邮件模式为 `log`，不发送真实邮件。环境变量示例按新终端、未额外配置其他服务的情况编写；已有环境变量会影响最终配置。
 
-### 4. Docker Compose 完整部署
+没有运行 Redis 时，保持上述环境变量，将最后的 Maven 命令替换为：
 
-Compose 会启动以下服务：
+```bash
+mvn spring-boot:run "-Dspring-boot.run.arguments=--management.health.redis.enabled=false"
+```
 
-| 服务 | 端口 | 说明 |
+这只关闭 Redis 健康探针，不会启用缓存，也不会伪造 Redis 可用状态。缓存读写失败时按代码逻辑降级，近期对话从持久化聊天记录恢复；仍会尝试连接 Redis，可能增加等待时间。正式使用建议配置可用的 Redis。
+
+访问 <http://localhost:8080/>，首次空数据库会创建：
+
+| 账号 | 密码 | 用途 |
 | --- | --- | --- |
-| MindHarbor | `8080` | Web 界面与 API |
-| MySQL | `3306` | 业务数据 |
-| Redis | `6379` | 短期会话记忆 |
-| Chroma | `8000` | 知识库和用户画像向量检索 |
-| Mailpit | `1025` / `8025` | SMTP 测试服务 / 管理页面 |
+| `student` | `student123` | 学生聊天与个人记忆 |
+| `admin` | `admin123` | 管理后台；不能以管理员身份发起学生对话 |
 
-Docker 中的 MindHarbor 默认访问宿主机 `11434` 端口上的 Ollama，因此需先确保 Ollama 和模型已就绪：
+演示账号仅在数据库没有用户时初始化。修改初始化代码不会自动更新已有账号密码。
 
-```bash
-ollama list
-curl http://localhost:11434/api/tags
+### 4. 检查运行结果
+
+PowerShell 可用：
+
+```powershell
+Invoke-RestMethod 'http://localhost:8080/actuator/health'
 ```
 
-如果 Ollama 只监听 `127.0.0.1`，容器将无法访问它。使用 Ollama CLI 时可改为监听所有网卡（并应通过防火墙限制只允许本机/容器网络访问）：
-
-```bash
-OLLAMA_HOST=0.0.0.0:11434 ollama serve
-```
-
-为避免首次启动时 MySQL 尚未就绪，建议先启动依赖，再构建应用容器：
-
-```bash
-docker compose up -d mysql redis chroma mailpit
-docker compose ps
-docker compose up -d --build app
-```
-
-查看应用日志：
-
-```bash
-docker compose logs -f app
-```
-
-停止服务（保留数据卷）：
-
-```bash
-docker compose down
-```
-
-如需同时删除 MySQL、Redis 和 Chroma 的持久化数据，可执行 `docker compose down -v`。该操作不可恢复，仅建议在重置开发环境时使用。
-
-### 5. 常用配置
-
-所有配置都可通过环境变量覆盖，常用项如下：
-
-| 环境变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `SERVER_PORT` | `8080` | 应用端口 |
-| `AI_PROVIDER` | `ollama` | `ollama` 或 `openai` |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama 地址 |
-| `OLLAMA_MODEL` | `mindbridge-qwen2.5-7b-ft:latest` | Ollama 模型名 |
-| `OPENAI_API_KEY` | 空 | OpenAI 密钥 |
-| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI 模型名 |
-| `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | 见配置文件 | 数据库连接 |
-| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis 连接 |
-| `USE_CHROMA` | `true` | 是否使用 Chroma 知识检索 |
-| `MCP_EMAIL_MODE` | `log` | `log`、`smtp`、`http` 或 `mcp` |
-
-更多模型、MySQL、Chroma、SMTP 和 MCP 参数见本文档后续同名章节。不要将 API Key 或真实密码提交到代码仓库。
-
-### 6. 启动验证
-
-应用启动后，访问：
-
-```text
-http://localhost:8080
-```
-
-检查健康状态：
+Bash 可用：
 
 ```bash
 curl http://localhost:8080/actuator/health
-```
-
-预期返回包含 `"status":"UP"` 的 JSON。页面左上角会显示当前模型模式；如果 Ollama 未启动、模型未导入或地址配置错误，聊天接口会提示模型连接失败。
-
-首次启动会创建两个演示账号：
-
-```text
-admin / admin123
-student / student123
-```
-
-> 上述账号和 Docker Compose 中的数据库密码仅适用于本地演示。对外部署前，需在 `DataInitializer.java` 中替换演示账号机制，修改 Compose 数据库口令，并根据实际需求收紧网络端口和访问权限。
-
-### 7. 常见问题
-
-- `Connection refused: 11434`：Ollama 未启动，先执行 `./scripts/start-ollama.sh` 或 `ollama serve`。
-- `model not found`：执行 `ollama list` 确认模型名，并检查 `OLLAMA_MODEL` 是否一致。
-- `Address already in use`：8080 端口被占用，可使用 `SERVER_PORT=8090 ./scripts/run-dev.sh` 更换端口。
-- Docker 中无法连接 Ollama：确认宿主机 Ollama 允许容器访问，并检查 Compose 中的 `OLLAMA_BASE_URL=http://host.docker.internal:11434`。
-- MySQL 或 Chroma 启动较慢：先用 `docker compose ps` 检查依赖服务，再用 `docker compose restart app` 重启应用。
-
-## 调用示例
-
-```bash
-curl -N -u student:student123 \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"我最近很焦虑，晚上总是睡不着"}' \
-  http://localhost:8080/api/chat/stream
-```
-
-高风险示例会触发报告、Excel 写入和预警：
-
-```bash
-curl -N -u student:student123 \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"我不想活了，感觉撑不下去了"}' \
-  http://localhost:8080/api/chat/stream
-```
-
-管理员查看后台报告：
-
-```bash
-curl -u admin:admin123 http://localhost:8080/api/admin/reports
-```
-
-查看当前是否接入真实大模型：
-
-```bash
 curl -u student:student123 http://localhost:8080/api/agent/status
 ```
 
-查看当前学生账号的画像记忆：
+健康状态 `UP` 表示相关健康检查通过；`/api/agent/status` 返回的是模型客户端配置，均不代替真实模型调用。请用学生账号发送一条普通消息，确认收到完整回答。Redis 不可用时近期记忆会降级，但健康检查仍可能为 `DOWN`；先检查 Redis 端口和连接参数。
 
-```bash
-curl -u student:student123 http://localhost:8080/api/profile/memory
-```
-
-管理员追加知识库：
-
-默认内置知识库位于 `src/main/resources/knowledge/`，启动时会按来源文件补齐到 RAG 库中；当前包含校园心理健康、风险策略、焦虑睡眠、低落社交、学业压力、校园求助、人际家庭冲突、危机安全计划和隐私边界等 Markdown 文档。
-
-```bash
-curl -u admin:admin123 \
-  -H 'Content-Type: application/json' \
-  -d '{"source":"sleep-guide","content":"失眠时可先固定起床时间，减少睡前屏幕刺激，必要时联系校心理中心。"}' \
-  http://localhost:8080/api/admin/knowledge
-```
-
-## 接入 Ollama / LoRA 模型
-
-默认模型配置就是本地 Ollama 路线，模型名为：
+## 架构与数据流
 
 ```text
-mindbridge-qwen2.5-7b-ft:latest
+浏览器 / API
+  -> ChatController -> ChatService / ReplyStore
+  -> MemoryAgent -> SupervisorAgent
+                     -> KnowledgeAgent / RiskGuardianAgent（按路由执行）
+                     -> CompanionAgent 或 CounselorAgent
+  -> Spring AI -> Ollama 或 OpenAI 兼容接口 -> SSE
+
+报告落库 -> 持久化任务
+           ├─ Excel 归档
+           └─ 高风险邮件 -> 投递事件核对 -> 辅导员主动确认
 ```
 
-本地模型由这个 GGUF 权重创建：
+`AgentRuntimeService` 调度有限步 Agent loop；`ChatService` 组织对话与流式生成；`ReplyStore` 管理请求身份、执行权、重试和完整回复保存。后台报告及轨迹包含评估信息，学生回复不展示风险等级或后台报告字段。
+
+Excel 与邮件分别领取、执行和更新状态，**邮件不等待 Excel 成功**。数据库、Redis、工作簿和邮件服务并非同一个事务；持久化任务、重试和结果核对也不等于跨系统原子提交或严格只发送一次。
+
+```text
+src/main/java/com/mindbridge/agent/
+  config/          配置、认证、模型与 MCP 接入
+  controller/      聊天、知识库、报告、邮件与记忆 API
+  domain/          持久化实体与状态
+  repository/      Spring Data JPA
+  service/
+    agent/         多 Agent 路由与回复规划
+    ai/            模型客户端、提示词与风险词库
+    knowledge/     入库、检索、重排、文档解析与评测
+    memory/        近期对话与用户画像
+    mcp/           Excel、邮件及 MCP 工具调用
+src/main/resources/static/   浏览器界面
+src/main/resources/knowledge/ 内置知识库
+services/mcp-tools/          独立 MCP 工具服务
+services/document-parser/    可选 OCR 文档服务
+scripts/                    启动、打包及模型导入脚本
+eval/                       可选 Python RAGAS 工具
+docs/                       专题设计与接入说明
+```
+
+## 模型与检索配置
+
+### 公共 Ollama 模型与项目微调模型
+
+首次运行可使用上文的公共模型，也可将 `OLLAMA_MODEL` 设置为自己已安装的模型标签。仓库默认值仍是 `mindbridge-qwen2.5-7b-ft:latest`，它**不是克隆仓库后自动获得的模型**。
+
+GitHub 源码不包含 GGUF、LoRA adapter、训练数据集、数据库、业务报告、私有配置或 `.tools/`。若有自行准备的项目 GGUF，将其放至：
 
 ```text
 models/mindbridge-qwen2.5-7b-ft/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
 ```
 
-首次运行或重新导入模型时执行：
+然后运行：
 
 ```bash
-cd MindHarbor
-./scripts/create-finetuned-model.sh
+bash scripts/create-finetuned-model.sh
+bash scripts/run-dev.sh
 ```
 
-之后直接启动项目：
+Shell 脚本示例使用 `bash` 显式执行，不依赖克隆后脚本的执行权限。`run-dev.sh` 是 Ollama 路线的辅助脚本，会处理服务与模型检查；它不会自动启动 Redis 或完整的外部依赖。训练与转换步骤见 [微调指南](docs/qwen25-7b-lora-finetune-guide.md)，该指南所需训练数据须另行准备。
+
+### OpenAI 兼容聊天接口
+
+主应用支持 `AI_PROVIDER=openai`，读取 `OPENAI_API_KEY`、`OPENAI_MODEL` 和 `OPENAI_BASE_URL`。例如 Bash：
 
 ```bash
-cd MindHarbor
-./scripts/run-dev.sh
-```
-
-如果终端提示 `ollama: command not found`，说明只是命令链接没建好；本项目脚本会直接调用 `/Applications/Ollama.app/Contents/Resources/ollama`。
-
-也可以不用脚本，手动指定本地模型启动：
-
-```bash
-cd MindHarbor
-AI_PROVIDER=ollama \
-OLLAMA_BASE_URL=http://localhost:11434 \
-OLLAMA_MODEL=mindbridge-qwen2.5-7b-ft:latest \
-JAVA_HOME="$PWD/.tools/amazon-corretto-17.jdk/Contents/Home" \
-  .tools/apache-maven-3.9.9/bin/mvn -Dmaven.repo.local=.m2/repository spring-boot:run
-```
-
-## 接入 OpenAI
-
-```bash
-cd MindHarbor
 AI_PROVIDER=openai \
-OPENAI_API_KEY=你的_API_Key \
-OPENAI_MODEL=gpt-4o-mini \
-JAVA_HOME="$PWD/.tools/amazon-corretto-17.jdk/Contents/Home" \
-  .tools/apache-maven-3.9.9/bin/mvn -Dmaven.repo.local=.m2/repository spring-boot:run
-```
-
-## 使用 MySQL、Chroma、SMTP
-
-启动依赖：
-
-```bash
-docker compose up -d mysql redis chroma mailpit
-```
-
-使用 MySQL profile：
-
-```bash
-AI_PROVIDER=ollama \
-USE_CHROMA=true \
-MEMORY_USE_CHROMA=true \
-MCP_EMAIL_MODE=smtp \
-ALERT_MAIL_RECIPIENTS=counselor@example.com \
-mvn spring-boot:run -Dspring-boot.run.profiles=mysql
-```
-
-默认会使用两个 Chroma collection：
-
-- `mindbridge_knowledge`：RAG 知识库切块检索。
-- `mindbridge_user_memory`：用户画像/偏好长期语义记忆召回。
-
-Mailpit 管理页面：`http://localhost:8025`
-
-## MCP 工具模式
-
-Excel 工具：
-
-- `MCP_EXCEL_MODE=local`：默认写入 `./data/mindbridge-reports.xlsx`
-- `MCP_EXCEL_MODE=http`：调用 `MCP_EXCEL_URL/write`
-- `MCP_EXCEL_MODE=mcp`：通过标准 Model Context Protocol Client 调用 MCP Server 暴露的 `mindbridge_write_excel_report` 工具
-
-邮件工具：
-
-- `MCP_EMAIL_MODE=log`：默认只记录日志，便于本地演示
-- `MCP_EMAIL_MODE=smtp`：使用 Spring Mail 发送
-- `MCP_EMAIL_MODE=http`：调用 `MCP_EMAIL_URL/send`
-- `MCP_EMAIL_MODE=mcp`：通过标准 Model Context Protocol Client 调用 MCP Server 暴露的 `mindbridge_send_risk_alert` 工具
-
-标准 MCP：
-
-- `MCP_SERVER_ENABLED=true`：启用 Spring AI MCP WebFlux Server，默认 SSE 端点为 `/sse`，消息端点为 `/mcp/messages`
-- `MCP_CLIENT_ENABLED=true`：启用 Spring AI MCP WebFlux Client，默认连接 `MCP_SERVER_URL`
-- `MCP_EMAIL_SERVER_DELIVERY_MODE=log|smtp`：MCP Server 收到邮件工具调用后的实际投递方式
-
-高风险链路按文档实现为：写入报告 -> 写入 Excel -> Excel 成功后发送预警 -> 更新状态。
-
-## RAGAS 评测
-
-项目使用 RAGAS 做 RAG 质量评测。Java 主工程不引入 RAGAS 依赖，只负责执行检索和单次 RAG 回答生成，导出 RAGAS 输入报告；RAGAS 作为 `eval/` 目录下的可选 Python 工具运行。
-
-Java 输入报告包含每条样本的：
-
-- `question`：用户问题
-- `answer`：模型最终回答
-- `retrievedContexts`：RAG 检索到的上下文
-- `referenceAnswer`：参考答案
-- `retrievedSources`、`expectedIntent`、`expectedRiskLevel`：用于人工分析的元数据
-
-运行评测：
-
-```bash
-SPRING_MAIN_WEB_APPLICATION_TYPE=none \
-AI_PROVIDER=ollama \
-OLLAMA_BASE_URL=http://localhost:11434 \
-OLLAMA_MODEL=mindbridge-qwen2.5-7b-ft:latest \
+OPENAI_API_KEY='replace-with-your-key' \
 USE_CHROMA=false \
+MEMORY_USE_CHROMA=false \
+MCP_SERVER_ENABLED=false \
+mvn spring-boot:run
+```
+
+PowerShell 使用 `$env:变量名 = '值'` 设置相同变量。密钥只放本机环境或部署平台的秘密配置，不写进 README、源码或提交记录。不要用 `run-dev.sh` 切换 OpenAI 模式，该脚本会显式选择 Ollama。
+
+### 向量检索不是只启动 Chroma
+
+默认 YAML 中 `USE_CHROMA=true`，`MEMORY_USE_CHROMA` 默认跟随它；首次运行示例显式关闭两者，以避免误把未配置的向量服务当作可用依赖。
+
+知识库向量召回需要同时具备：可用的 embedding 接口、对应向量数据和 Chroma 服务。当前 embedding 客户端使用 OpenAI 兼容的 `/v1/embeddings`，配置来自 `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`OPENAI_EMBEDDING_MODEL`。Key 为空时返回空向量；知识检索仍可使用 BM25，但不应声称已启用向量召回。
+
+本地容器配置使用 Ollama 兼容接口与 `bge-m3`，并设置非空占位 Key `ollama-local`；它不是外部服务密钥。聊天模型仍由 `AI_PROVIDER` 和 `OLLAMA_*` 控制。`OPENAI_BASE_URL` 同时影响 OpenAI 聊天与 embedding，混用外部聊天模型和本地 embedding 前需核对两者的实际地址配置。
+
+详细实现见 [RAG 技术说明](docs/rag-technical-guide.md)。
+
+## Docker 与扩展功能
+
+### 基础容器模式
+
+先保证宿主机 Ollama 可被容器访问，并准备好所选模型。Bash 示例：
+
+```bash
+OLLAMA_MODEL=qwen2.5:1.5b docker compose up -d mysql redis chroma mailpit
+OLLAMA_MODEL=qwen2.5:1.5b docker compose up -d --build app
+docker compose ps
+docker compose logs -f app
+```
+
+PowerShell 先设置 `$env:OLLAMA_MODEL = 'qwen2.5:1.5b'`，再运行相同的 `docker compose` 命令。基础 Compose 使用 MySQL；启动依赖的命令返回不等于数据库已就绪，需检查日志和应用健康状态，必要时在依赖就绪后重启应用。
+
+| 服务 | 基础 Compose 的宿主机端口 |
+| --- | --- |
+| 应用 | `8080` |
+| MySQL | `3306` |
+| Redis | `6379` |
+| Chroma | `8000` |
+| Mailpit SMTP / 页面 | `1025` / `8025` |
+
+基础 Compose 的邮件模式默认仍为 `log`；启动 Mailpit 本身不会切换为 SMTP。应用容器通过 `host.docker.internal:11434` 访问宿主机 Ollama，需按实际系统配置服务监听地址与容器网络访问。普通文本聊天不要求启用 OCR。
+
+停止容器、保留数据卷：`docker compose down`。重置前先备份，不要把删除数据卷作为常规排障步骤。
+
+### Windows 本地完整演示
+
+```powershell
+.\scripts\start-local.ps1
+```
+
+此脚本组合基础、图片解析和本地 Compose 文件，会构建 JAR/容器，准备 `qwen2.5:1.5b`、`qwen2.5vl:3b`、`bge-m3`，启用 OCR/视觉解析和本地向量检索，并使用 SMTP/Mailpit 演示。首次模型与 OCR 依赖下载可能耗时，资源需求也高于最小文本模式。
+
+本地覆盖配置将应用绑定到 `127.0.0.1:8080`，MySQL 绑定到 `127.0.0.1:3307`；Redis、Chroma 和 Mailpit 端口仍由基础 Compose 决定，不能据此认为所有依赖均已限制为本机访问。该覆盖文件使用 `!override`，需使用支持该标签的 Docker Compose。
+
+脚本会读取已有 `.env.resend.local`；如果其中启用了 MCP，会保留真实邮件模式。仅演示聊天时不要复制真实邮件配置。已有完整构建可使用 `-NoBuild`，源代码变更后需要重新构建。
+
+### 图片与扫描 PDF
+
+普通文本模式支持 Markdown、TXT 和文本 PDF；图片和扫描 PDF 的 OCR/视觉路径需启用 `KNOWLEDGE_MEDIA_ENABLED` 并启动 `services/document-parser`。当前上传入口限制为 **10 MiB**；解析结果可能需要管理员在知识库校对界面确认后才参与检索。
+
+启用说明与解析限制见 [图片知识库接入说明](docs/image-knowledge-ingestion.md)。
+
+### 真实邮件与独立 MCP
+
+默认 `MAIL_PROVIDER=legacy`，搭配 `MCP_EMAIL_MODE=log` 不发送真实邮件；`smtp` 使用配置的 SMTP 服务。独立工具链由 `docker-compose.mcp.yml` 启用：
+
+```text
+主应用 -> 带服务令牌的 MCP Client -> mcp-tools
+  ├─ mindbridge_write_excel_report
+  ├─ mindbridge_send_risk_alert -> Resend
+  └─ mindbridge_get_mail_status
+```
+
+公开仓库提供 [.env.example](.env.example) 作为字段说明。仅在准备接入真实邮件时，将其复制为 `.env.resend.local` 并在本机补齐配置；Spring Boot 本地 Maven 启动不会自动读取此文件。
+
+独立工具模式至少需要 `RESEND_API_KEY`、`ALERT_MAIL_FROM`、`ALERT_MAIL_RECIPIENTS`、`ALERT_RECIPIENT_ACCOUNTS` 和强随机 `MCP_SERVICE_TOKEN`。接收投递回调还需 `RESEND_WEBHOOK_SECRET` 及服务商可达的回调地址；邮件链接通过 `MINDBRIDGE_PUBLIC_URL` 指向应用。`localhost` 只适合本机点击测试。
+
+Windows 的 `scripts/start-mcp.ps1` 会在 Token 配置项不存在时生成令牌，开启 MCP 模式并处理已有持久化任务；不要在未检查配置和待处理任务时运行。完整接入步骤见 [独立 MCP 工具说明](docs/mcp-tools-integration.md) 与 [邮件跟进流程](docs/mail-workflow.md)。
+
+Excel 和邮件独立执行；`SUCCESS / ACCEPTED`、`DELIVERED`、辅导员主动确认是不同状态，不能互相替代。工具端账本、幂等窗口和文件单写入者的限制见上述专题文档。
+
+## 配置速查
+
+以下是 `src/main/resources/application.yml` 的默认值；Compose 覆盖文件和显式环境变量可能改变它们。
+
+| 环境变量 | 默认值 / 说明 |
+| --- | --- |
+| `AI_PROVIDER` | `ollama`；也支持 `openai` |
+| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | `http://localhost:11434` / `mindbridge-qwen2.5-7b-ft:latest` |
+| `OPENAI_BASE_URL` / `OPENAI_MODEL` | `https://api.openai.com` / `gpt-4o-mini` |
+| `OPENAI_API_KEY` | 空；启用 OpenAI 聊天时必须提供 |
+| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small`；使用上面的兼容接口地址和 Key |
+| `SERVER_PORT` | `8080` |
+| `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | H2 文件库 / `sa` / 空；MySQL profile 另见 `application-mysql.yml` |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | `localhost` / `6379` / 空 |
+| `USE_CHROMA` / `MEMORY_USE_CHROMA` | 默认 `true`；后者未设置时跟随前者 |
+| `CHROMA_BASE_URL` | `http://localhost:8000` |
+| `MCP_SERVER_ENABLED` / `MCP_CLIENT_ENABLED` | 主应用内置服务端默认 `true`，自动客户端默认 `false` |
+| `MCP_EXCEL_MODE` / `MCP_EMAIL_MODE` | `local` / `log` |
+| `MAIL_PROVIDER` | `legacy`；可选直接 `resend` 或独立工具 `mcp-resend` |
+| `KNOWLEDGE_MEDIA_ENABLED` | `false` |
+| `RAG_EVAL_ENABLED` | `false` |
+
+配置名保留原有技术标识，例如 `MINDBRIDGE_PUBLIC_URL`，不要改写为未被代码读取的 `MINDHARBOR_*` 变量。其他参数见配置文件和 `docs/`。
+
+## API 与回复恢复
+
+以下 curl 示例使用 Bash 语法；Windows 可通过网页操作，或在 Git Bash 中执行。接口使用 HTTP Basic；除健康检查等公开入口外，业务 API 需要登录，管理员接口还需相应角色。
+
+```bash
+curl -N -u student:student123 \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"你好，可以帮我安排今天的学习吗？"}' \
+  http://localhost:8080/api/chat/stream
+```
+
+集成客户端应在提交前生成并保存 `requestId`，推荐 UUID。格式为 16–64 位字母、数字或连字符；`message` 最长 4000 字符，`sessionId` 留空创建会话。同一请求 ID 用于恢复同一轮请求，新消息使用新的 ID。
+
+| 接口 | 用途 |
+| --- | --- |
+| `POST /api/chat/stream` | 提交消息并接收 SSE |
+| `GET /api/chat/replies/{requestId}` | 查询生成状态和已成功保存的完整正文 |
+| `POST /api/chat/replies/{requestId}/resume` | 恢复原请求 |
+| `POST /api/chat/replies/{requestId}/regenerate?generation=N` | 显式重新生成失败回复；`N` 使用状态查询返回的轮次 |
+| `GET /api/profile/memory` | 当前账号画像记忆 |
+| `GET /api/admin/reports` | 管理员查看心理报告 |
+| `GET /api/admin/run-traces` | 管理员查看 Agent 轨迹 |
+| `POST /api/admin/knowledge` | JSON 录入知识，字段为 `source`、`content` |
+| `POST /api/admin/knowledge/file` | multipart 文件上传，字段名为 `file` |
+| `GET /api/admin/knowledge/review` | 待校对知识块 |
+| `PUT /api/admin/knowledge/review/{id}` | 校对并发布知识块 |
+
+SSE 包含 `meta`、`start`、`token`、`retry`、`heartbeat`、`done`、`error`、`busy` 等事件。**只有 `done` 或查询到 `SUCCESS` 才表示回复成功**，不能把连接关闭当成成功。
+
+生成失败或中断不保存半段助手正文。自动重试复用已准备的提示词，恢复是重新生成整段回答，不是继续拼接旧 token；准备结果未落库时进程崩溃、生成预算耗尽等情况仍可能需要重新提交。完整边界见 [回复恢复说明](docs/reply-recovery.md)。
+
+## 测试与评测
+
+```bash
+mvn test
+mvn -f services/mcp-tools/pom.xml test
+```
+
+现有测试覆盖 Agent 路由、SSE、回复恢复、知识检索与校对、网络超时、邮件幂等参数和任务状态等；独立 MCP 集成测试使用本地模拟邮件服务。测试通过不等于真实邮件已投递或模型效果已验证。
+
+RAG 评测分两步：先由 Java 执行检索与回答生成，导出报告，再由可选 Python 工具调用评审模型计算 RAGAS 指标。默认数据集有 100 条场景样本，不是临床或线上效果证明。
+
+Bash 导出示例：
+
+```bash
+AI_PROVIDER=ollama \
+OLLAMA_MODEL=qwen2.5:1.5b \
+USE_CHROMA=false \
+MEMORY_USE_CHROMA=false \
+MCP_SERVER_ENABLED=false \
 RAG_EVAL_ENABLED=true \
 RAG_EVAL_EXIT_AFTER_RUN=true \
-DB_URL='jdbc:h2:mem:mindbridge-rag-eval;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1' \
-JAVA_HOME="$PWD/.tools/amazon-corretto-17.jdk/Contents/Home" \
-  .tools/apache-maven-3.9.9/bin/mvn -Dmaven.repo.local=.m2/repository spring-boot:run
+DB_URL='jdbc:h2:mem:rag-eval;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1' \
+mvn spring-boot:run
 ```
 
-默认评测集：`src/main/resources/rag-eval/mindbridge-rag-eval.json`
+报告默认保存到 `target/rag-eval-report.json`。完整生成会调用模型多次，耗时取决于服务性能；可通过 `RAG_EVAL_DATASET` 指向更小的数据集。Python 安装与评审模型选择见 [评测工具说明](eval/README.md)。不要在没有对应报告时声称已获得某个准确率或 RAGAS 分数。
 
-默认评测集包含 100 条人工整理样本，覆盖全部 9 个内置知识主题，并按风险分层为 45 条 LOW、40 条 MEDIUM、15 条 HIGH。完整运行会对每条样本执行检索和回答生成，因此相比早期 10 条 smoke set 会消耗更多模型调用时间；调试链路时可通过 `RAG_EVAL_DATASET` 指向更小的自定义数据集。
+## 部署边界与排障
 
-默认 Java 输入报告：`target/rag-eval-report.json`
+- 演示账号、HTTP Basic、默认数据库密码及基础 Compose 的端口映射用于开发。对外提供服务前，需要替换演示账号机制、配置 HTTPS、限制数据库和管理入口，并检查内置 MCP 服务端的暴露与鉴权。
+- 已有 `ddl-auto=update` 和启动期迁移逻辑，不能替代经过审查的生产数据库迁移、备份与恢复流程。Excel 当前按单实例写入维护，不应让多个独立写入者共享工作簿。
+- SSE 经反向代理时需核对缓冲和超时设置；邮件里的应用链接、回调入口与学生聊天页面是不同配置，不要将临时回调地址当作公共应用地址。
+- `model not found`：用 `ollama list` 核对实际标签，并显式设置 `OLLAMA_MODEL`。克隆源码不包含模型权重。
+- `Connection refused`：分别检查 Ollama、Redis、数据库的监听地址和端口；容器内的 `localhost` 指向容器自身。
+- `401 / 403`：检查学生/管理员账号和接口权限；管理员不能发起学生聊天。
+- 启用了 Chroma 但没有向量命中：检查 embedding 是否成功、collection 是否匹配，以及知识是否已发布或需要重建索引。
+- `Unsupported tag !override`：更新到支持该标签的 Compose，或先使用本机 Maven 的文本聊天路径。
+- 端口占用：本机启动可设置 `SERVER_PORT`；Docker 的宿主机端口还需修改 Compose 映射。
 
-评测集中的每条样本包含：
+运行数据、密钥和本机文件继续由 `.gitignore` 排除；不要使用强制添加把 `.env.resend.local`、数据库、报告或日志提交到公开仓库。
 
-- `question`：待检索问题
-- `expectedSources`：应该命中的知识库来源文件
-- `expectedTerms`：人工分析检索命中的辅助关键词
-- `referenceAnswer`：RAGAS 使用的参考答案
-- `expectedIntent` / `expectedRiskLevel`：路由和风险分级期望，作为 RAGAS 输出里的元数据保留
+## 专题文档
 
-`eval/run-ragas-eval.py` 读取 `target/rag-eval-report.json` 后计算：
-
-- `LLMContextPrecisionWithReference`：检索片段排序是否把相关内容排在前面
-- `LLMContextRecall`：检索内容是否覆盖参考答案需要的信息
-- `ResponseRelevancy`：回答是否切题
-- `Faithfulness`：回答中的事实是否能被检索上下文支持
-- `FactualCorrectness`：若当前 RAGAS 版本支持，则对比参考答案检查事实正确性
-
-安装 RAGAS 依赖：
-
-```bash
-python3 -m pip install -r eval/requirements-ragas.txt
-```
-
-使用 OpenAI 评审模型：
-
-```bash
-OPENAI_API_KEY=... \
-python3 eval/run-ragas-eval.py \
-  --provider openai \
-  --input target/rag-eval-report.json \
-  --output target/ragas-report.json
-```
-
-使用本地 Ollama 评审模型：
-
-```bash
-/Applications/Ollama.app/Contents/Resources/ollama pull nomic-embed-text
-
-python3 eval/run-ragas-eval.py \
-  --provider ollama \
-  --judge-model qwen2.5:7b \
-  --embedding-model nomic-embed-text \
-  --input target/rag-eval-report.json \
-  --output target/ragas-report.json
-```
-
-RAGAS 输出报告：`target/ragas-report.json`
-# 图片与扫描文档知识库
-
-新增可选的 PDF 页面渲染、PaddleOCR 版面解析、Ollama 视觉理解，以及管理员原图校对和发布流程。支持 PNG/JPEG 和扫描 PDF，保留页码、表格/公式结构。默认保留文本解析模式；启用方式见 [图片知识库接入说明](docs/image-knowledge-ingestion.md)。
-
+- [多 Agent 协作](docs/multi-agent-collaboration-copy.md)
+- [RAG 检索与重排](docs/rag-technical-guide.md)
+- [流式回复与断线恢复](docs/reply-recovery.md)
+- [邮件投递、提醒与确认](docs/mail-workflow.md)
+- [独立 MCP 工具服务](docs/mcp-tools-integration.md)
+- [图片与扫描文档知识库](docs/image-knowledge-ingestion.md)
+- [LoRA 微调与模型转换](docs/qwen25-7b-lora-finetune-guide.md)
+- [RAGAS 工具](eval/README.md)

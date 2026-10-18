@@ -21,7 +21,7 @@ python3 eval/run-ragas-eval.py \
 Local Ollama judge:
 
 ```bash
-/Applications/Ollama.app/Contents/Resources/ollama pull nomic-embed-text
+ollama pull nomic-embed-text
 
 python3 eval/run-ragas-eval.py \
   --provider ollama \

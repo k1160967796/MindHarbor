@@ -4,9 +4,9 @@
 
 心理报告与工具任务写入 MySQL → 后台任务领取 → MCP Client → 独立 `mcp-tools` 服务。
 
-- Excel：`mindbridge_write_excel_report` → 按报告 ID 去重 → 临时文件写入 → 原子替换正式文件 → 明确返回报告 ID 和成功状态。
-- 邮件：`mindbridge_send_risk_alert` → 校验固定任务标识和冻结内容 → 工具侧持久化账本 → Resend API → 返回 providerEmailId。
-- 投递：Resend 签名回调 → 主项目 `mail_delivery_events` → 更新任务投递状态；回调缺失时调用 `mindbridge_get_mail_status` 主动核对。
+- Excel：`mindharbor_write_excel_report` → 按报告 ID 去重 → 临时文件写入 → 原子替换正式文件 → 明确返回报告 ID 和成功状态。
+- 邮件：`mindharbor_send_risk_alert` → 校验固定任务标识和冻结内容 → 工具侧持久化账本 → Resend API → 返回 providerEmailId。
+- 投递：Resend 签名回调 → 主项目 `mail_delivery_events` → 更新任务投递状态；回调缺失时调用 `mindharbor_get_mail_status` 主动核对。
 - 确认：辅导员登录并主动确认，停止后续提醒。每轮提醒是新的任务与发送标识，同一轮重试复用原标识。
 
 Excel 和邮件是独立持久化任务，Excel 失败不会阻塞邮件。学生回复不等待这些工具任务。
@@ -16,7 +16,7 @@ Excel 和邮件是独立持久化任务，Excel 失败不会阻塞邮件。学�
 在项目目录运行 `powershell -ExecutionPolicy Bypass -File scripts/start-mcp.ps1`。构建完成后可加 `-NoBuild`。
 
 - 主界面：<http://localhost:8080/>
-- 新归档文件：`data/mcp-tools/mindbridge-reports.xlsx`。首次迁移复制原文件，原文件保留。
+- 新归档文件：`data/mcp-tools/mindharbor-reports.xlsx`。首次迁移复制原文件，原文件保留。
 - 工具账本：`data/mcp-tools/tool-ledger.mv.db`，重启容器保留。
 - 本地配置：`.env.resend.local`，已排除在 Git 和 Docker 构建上下文之外。
 - 运行配置：`docker-compose.mcp.yml`，工具服务只在 Docker 网络中监听 8081，不暴露宿主机端口。

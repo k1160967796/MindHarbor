@@ -86,7 +86,7 @@ Chroma 镜像携带页码、类型和图片引用。数据库是权威来源：�
 
 学生账号 `student / student123`，管理员账号 `admin / admin123`。管理员登录后可使用“知识库上传”和“知识内容校对”。本地测试邮件在 http://localhost:8025 查看，不会投递到外部邮箱。
 
-`docker-compose.local.yml` 使用轻量聊天模型 `qwen2.5:1.5b`、视觉模型 `qwen2.5vl:3b` 和本地 Embedding `bge-m3`。这些是基础模型，并非简历中提到的微调权重。MySQL 映射到本机 3307，避开已有 3306 服务。首次启动重建已有已发布知识的向量索引，使用带 `bge_m3` 后缀的新集合，保留旧集合；`MINDBRIDGE_KNOWLEDGE_REINDEX_ON_START=false` 可关闭后续启动重建。更换 Embedding 模型时必须同时重建数据库向量和新的 Chroma 集合。
+`docker-compose.local.yml` 使用轻量聊天模型 `qwen2.5:1.5b`、视觉模型 `qwen2.5vl:3b` 和本地 Embedding `bge-m3`。这些是基础模型，并非简历中提到的微调权重。MySQL 映射到本机 3307，避开已有 3306 服务。首次启动重建已有已发布知识的向量索引，使用带 `bge_m3` 后缀的新集合，保留旧集合；`MINDHARBOR_KNOWLEDGE_REINDEX_ON_START=false` 可关闭后续启动重建。更换 Embedding 模型时必须同时重建数据库向量和新的 Chroma 集合。
 
 OCR 保留文字、表格、公式识别，图表交给 Ollama 视觉模型，避免同时加载另一套大型图表模型。首次加载和扫描 PDF 解析会较慢。
 

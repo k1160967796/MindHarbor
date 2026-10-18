@@ -25,8 +25,8 @@
 - 回调代理：`http://localhost:8086/api/mail/webhooks/resend`。
 - 代理仅允许此路径的 POST；主应用继续校验 Svix 签名。
 - Cloudflare Quick Tunnel 提供临时 HTTPS 地址；地址记录在 `data/resend-callback.json` 和本地配置 `RESEND_WEBHOOK_URL`。
-- 临时回调地址不是发信域名，也不是学生聊天页面地址。不要把它配置为 `MINDBRIDGE_PUBLIC_URL`。
-- `MINDBRIDGE_PUBLIC_URL` 目前为 `http://localhost:8080`，仅适用于本机点击邮件链接测试。
+- 临时回调地址不是发信域名，也不是学生聊天页面地址。不要把它配置为 `MINDHARBOR_PUBLIC_URL`。
+- `MINDHARBOR_PUBLIC_URL` 目前为 `http://localhost:8080`，仅适用于本机点击邮件链接测试。
 
 ## 重启后恢复
 
@@ -47,7 +47,7 @@ Quick Tunnel 用于开发测试，没有可用性保证；进程重建可能更�
 在 Resend Webhooks 页面将本项目 Webhook 设为 Disabled，然后执行：
 
 ```powershell
-docker compose -p mindbridge-callback -f docker-compose.callback.yml stop
+docker compose -p mindharbor-callback -f docker-compose.callback.yml stop
 ```
 
 再次运行启动脚本会更新 URL 并启用同一个 Webhook，不重复创建。

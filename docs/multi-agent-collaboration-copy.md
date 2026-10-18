@@ -197,7 +197,7 @@ SupervisorAgent 判断为 CONSULT。KnowledgeAgent 改写 query 并检索焦虑�
 
 MindHarbor 的记忆分成短期记忆和用户画像长期记忆。
 
-短期记忆解决“刚才聊到哪”的问题。`ShortTermMemoryService` 使用 Redis list 保存最近消息，key 以 `mindbridge:chat:short-memory:` 开头。每次保存用户或助手消息时，系统都会把消息追加到 Redis，并按 `historyLimit * 2` 截断，避免上下文无限增长。Redis 读失败或为空时，系统还能从 MySQL 会话消息恢复最近记录。
+短期记忆解决“刚才聊到哪”的问题。`ShortTermMemoryService` 使用 Redis list 保存最近消息，key 以 `mindharbor:chat:short-memory:` 开头。每次保存用户或助手消息时，系统都会把消息追加到 Redis，并按 `historyLimit * 2` 截断，避免上下文无限增长。Redis 读失败或为空时，系统还能从 MySQL 会话消息恢复最近记录。
 
 长期记忆解决“这个学生有哪些稳定偏好和背景”的问题。`UserProfileMemoryService` 在每轮用户输入后尝试抽取候选记忆，只保留对后续对话稳定有帮助的信息。类型包括偏好、沟通方式、支持需求、个人背景和状态模式。候选记忆有置信度门槛，默认低于 0.55 不保存；单个用户最多保留 40 条，旧记录会被裁剪。
 
@@ -231,7 +231,7 @@ RAG 在这里不是为了让回答显得资料更多，而是为了让心理支�
 -> 发送预警通知
 ```
 
-Excel 写入可以走本地文件、HTTP 或 MCP。预警通知可以走日志、SMTP、HTTP 或 MCP。`McpToolConfig` 为这套工具链配置了独立线程池，线程名前缀是 `mindbridge-mcp-`，避免工具调用占用聊天主流程。
+Excel 写入可以走本地文件、HTTP 或 MCP。预警通知可以走日志、SMTP、HTTP 或 MCP。`McpToolConfig` 为这套工具链配置了独立线程池，线程名前缀是 `mindharbor-mcp-`，避免工具调用占用聊天主流程。
 
 预警通知还有重试和落库。每个收件人会创建一条 `AlertRecord`，每次尝试都会增加 attempts，最终状态写成 SUCCESS 或 FAILED。这样管理员后台可以看到 Excel 是否写入成功、每封预警是否发送成功、失败原因是什么。
 
@@ -254,7 +254,7 @@ MindHarbor 把 Agent 协作过程保存为运行轨迹。`AgentRunTraceService.s
 
 ### 与模型的关系：多个 Agent 不等于多个模型
 
-本项目里的多个 Agent 可以共享同一个大模型客户端。默认配置使用 Ollama，模型名是 `mindbridge-qwen2.5-7b-ft:latest`；也可以通过配置切换到 OpenAI 兼容接口。项目内部通过 `AiClient` 抽象模型调用，`SpringAiChatClient` 再把内部的 `AiMessage` 转成 Spring AI 的 `SystemMessage`、`UserMessage` 和 `AssistantMessage`。
+本项目里的多个 Agent 可以共享同一个大模型客户端。默认配置使用 Ollama，模型名是 `mindharbor-qwen2.5-7b-ft:latest`；也可以通过配置切换到 OpenAI 兼容接口。项目内部通过 `AiClient` 抽象模型调用，`SpringAiChatClient` 再把内部的 `AiMessage` 转成 Spring AI 的 `SystemMessage`、`UserMessage` 和 `AssistantMessage`。
 
 所以，多 Agent 的差异主要来自职责、上下文和 prompt，而不是一定要部署多个模型。
 
@@ -272,13 +272,13 @@ MindHarbor 对学生端和后台做了明显区分。学生端不会看到风险
 
 ### 工程上的可扩展性
 
-如果后续要新增 Agent，项目已经留出了相对清楚的扩展方式。新增 Agent 只需要实现 `MindBridgeAgent`，定义自己的 `name()`、`supports(context)` 和 `act(context)`，再把它加入 `AgentRuntimeService` 的固定列表。
+如果后续要新增 Agent，项目已经留出了相对清楚的扩展方式。新增 Agent 只需要实现 `MindHarborAgent`，定义自己的 `name()`、`supports(context)` 和 `act(context)`，再把它加入 `AgentRuntimeService` 的固定列表。
 
 例如可以增加一个 `ResourceAgent`，专门根据学校配置推荐心理中心、辅导员、学院联系方式或预约入口。也可以增加一个 `ReflectionAgent`，在不打断回复的情况下检查 CounselorAgent 的回复是否泄露后台标签、是否包含诊断、是否遗漏高风险安全提示。
 
 不过，新增 Agent 不应该变成随意堆叠。MindHarbor 当前架构的好处在于职责边界清楚。一个新 Agent 应该满足两个条件：它有独立的状态输入和输出，它能减少某个现有 Agent 的复杂度。否则，把逻辑放进已有服务或 prompt 模板里可能更合适。
 
-配置层也比较容易扩展。`MindBridgeProperties` 集中管理模型 provider、温度、token 上限、RAG topK、reranker、chunk size、Chroma、Redis 记忆、Excel 写入和预警方式。部署时可以选择 H2 或 MySQL，可以启用或关闭 Chroma，可以用本地 Ollama，也可以切到 OpenAI 兼容接口。
+配置层也比较容易扩展。`MindHarborProperties` 集中管理模型 provider、温度、token 上限、RAG topK、reranker、chunk size、Chroma、Redis 记忆、Excel 写入和预警方式。部署时可以选择 H2 或 MySQL，可以启用或关闭 Chroma，可以用本地 Ollama，也可以切到 OpenAI 兼容接口。
 
 ### 测试如何证明协作路径正确
 

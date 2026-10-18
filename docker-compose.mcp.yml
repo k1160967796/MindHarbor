@@ -2,8 +2,8 @@
 services:
   mcp-tools:
     build: ./services/mcp-tools
-    image: mindbridge-mcp-tools:local
-    container_name: mindbridge-mcp-tools
+    image: mindharbor-mcp-tools:local
+    container_name: mindharbor-mcp-tools
     restart: unless-stopped
     environment:
       MCP_SERVICE_TOKEN: ${MCP_SERVICE_TOKEN:?Set MCP_SERVICE_TOKEN in .env.resend.local}
@@ -28,4 +28,4 @@ services:
       ALERT_MAIL_FROM: ${ALERT_MAIL_FROM:-onboarding@resend.dev}
       ALERT_MAIL_RECIPIENTS: ${ALERT_MAIL_RECIPIENTS:?Set ALERT_MAIL_RECIPIENTS}
       ALERT_RECIPIENT_ACCOUNTS: ${ALERT_RECIPIENT_ACCOUNTS:?Set ALERT_RECIPIENT_ACCOUNTS}
-      MINDBRIDGE_PUBLIC_URL: ${MINDBRIDGE_PUBLIC_URL:-http://localhost:8080}
+      MINDHARBOR_PUBLIC_URL: ${MINDHARBOR_PUBLIC_URL:-http://localhost:8080}

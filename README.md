@@ -18,7 +18,7 @@
 | 知识库管理 | 管理员录入文本、上传文件；可选 OCR/视觉解析与图片内容校对、发布 |
 | 管理后台与评测 | 对话记录、报告、工具状态和 Agent 执行轨迹；Java 评测导出及可选 RAGAS 工具 |
 
-项目展示名称为 **MindHarbor**。为兼容已有数据和部署，代码中的 `com.mindbridge` 包名、`mindbridge-*` 构建产物、模型标签及 `MINDBRIDGE_*` 配置名仍沿用原有标识。
+项目名称、Java 包名 `com.mindharbor`、`mindharbor-*` 构建产物、模型标签及 `MINDHARBOR_*` 配置名已统一。已有实例升级前需按下方的迁移说明核对持久化数据与部署配置。
 
 ## 首次运行：公共模型 + H2
 
@@ -77,7 +77,7 @@ MCP_SERVER_ENABLED=false \
 mvn spring-boot:run
 ```
 
-此模式使用 `data/mindbridge.mv.db` 保存 H2 数据，Redis 可用时缓存近期对话；没有 embedding 配置时，知识检索使用本地 BM25。默认邮件模式为 `log`，不发送真实邮件。环境变量示例按新终端、未额外配置其他服务的情况编写；已有环境变量会影响最终配置。
+此模式使用 `data/mindharbor.mv.db` 保存 H2 数据，Redis 可用时缓存近期对话；没有 embedding 配置时，知识检索使用本地 BM25。默认邮件模式为 `log`，不发送真实邮件。环境变量示例按新终端、未额外配置其他服务的情况编写；已有环境变量会影响最终配置。
 
 没有运行 Redis 时，保持上述环境变量，将最后的 Maven 命令替换为：
 
@@ -133,7 +133,7 @@ curl -u student:student123 http://localhost:8080/api/agent/status
 Excel 与邮件分别领取、执行和更新状态，**邮件不等待 Excel 成功**。数据库、Redis、工作簿和邮件服务并非同一个事务；持久化任务、重试和结果核对也不等于跨系统原子提交或严格只发送一次。
 
 ```text
-src/main/java/com/mindbridge/agent/
+src/main/java/com/mindharbor/agent/
   config/          配置、认证、模型与 MCP 接入
   controller/      聊天、知识库、报告、邮件与记忆 API
   domain/          持久化实体与状态
@@ -157,12 +157,12 @@ docs/                       专题设计与接入说明
 
 ### 公共 Ollama 模型与项目微调模型
 
-首次运行可使用上文的公共模型，也可将 `OLLAMA_MODEL` 设置为自己已安装的模型标签。仓库默认值仍是 `mindbridge-qwen2.5-7b-ft:latest`，它**不是克隆仓库后自动获得的模型**。
+首次运行可使用上文的公共模型，也可将 `OLLAMA_MODEL` 设置为自己已安装的模型标签。仓库默认值仍是 `mindharbor-qwen2.5-7b-ft:latest`，它**不是克隆仓库后自动获得的模型**。
 
 GitHub 源码不包含 GGUF、LoRA adapter、训练数据集、数据库、业务报告、私有配置或 `.tools/`。若有自行准备的项目 GGUF，将其放至：
 
 ```text
-models/mindbridge-qwen2.5-7b-ft/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
+models/mindharbor-qwen2.5-7b-ft/mindharbor-qwen2.5-7b-ft-q4_k_m.gguf
 ```
 
 然后运行：
@@ -250,14 +250,14 @@ PowerShell 先设置 `$env:OLLAMA_MODEL = 'qwen2.5:1.5b'`，再运行相同的 `
 
 ```text
 主应用 -> 带服务令牌的 MCP Client -> mcp-tools
-  ├─ mindbridge_write_excel_report
-  ├─ mindbridge_send_risk_alert -> Resend
-  └─ mindbridge_get_mail_status
+  ├─ mindharbor_write_excel_report
+  ├─ mindharbor_send_risk_alert -> Resend
+  └─ mindharbor_get_mail_status
 ```
 
 公开仓库提供 [.env.example](.env.example) 作为字段说明。仅在准备接入真实邮件时，将其复制为 `.env.resend.local` 并在本机补齐配置；Spring Boot 本地 Maven 启动不会自动读取此文件。
 
-独立工具模式至少需要 `RESEND_API_KEY`、`ALERT_MAIL_FROM`、`ALERT_MAIL_RECIPIENTS`、`ALERT_RECIPIENT_ACCOUNTS` 和强随机 `MCP_SERVICE_TOKEN`。接收投递回调还需 `RESEND_WEBHOOK_SECRET` 及服务商可达的回调地址；邮件链接通过 `MINDBRIDGE_PUBLIC_URL` 指向应用。`localhost` 只适合本机点击测试。
+独立工具模式至少需要 `RESEND_API_KEY`、`ALERT_MAIL_FROM`、`ALERT_MAIL_RECIPIENTS`、`ALERT_RECIPIENT_ACCOUNTS` 和强随机 `MCP_SERVICE_TOKEN`。接收投递回调还需 `RESEND_WEBHOOK_SECRET` 及服务商可达的回调地址；邮件链接通过 `MINDHARBOR_PUBLIC_URL` 指向应用。`localhost` 只适合本机点击测试。
 
 Windows 的 `scripts/start-mcp.ps1` 会在 Token 配置项不存在时生成令牌，开启 MCP 模式并处理已有持久化任务；不要在未检查配置和待处理任务时运行。完整接入步骤见 [独立 MCP 工具说明](docs/mcp-tools-integration.md) 与 [邮件跟进流程](docs/mail-workflow.md)。
 
@@ -270,7 +270,7 @@ Excel 和邮件独立执行；`SUCCESS / ACCEPTED`、`DELIVERED`、辅导员主�
 | 环境变量 | 默认值 / 说明 |
 | --- | --- |
 | `AI_PROVIDER` | `ollama`；也支持 `openai` |
-| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | `http://localhost:11434` / `mindbridge-qwen2.5-7b-ft:latest` |
+| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | `http://localhost:11434` / `mindharbor-qwen2.5-7b-ft:latest` |
 | `OPENAI_BASE_URL` / `OPENAI_MODEL` | `https://api.openai.com` / `gpt-4o-mini` |
 | `OPENAI_API_KEY` | 空；启用 OpenAI 聊天时必须提供 |
 | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small`；使用上面的兼容接口地址和 Key |
@@ -285,7 +285,7 @@ Excel 和邮件独立执行；`SUCCESS / ACCEPTED`、`DELIVERED`、辅导员主�
 | `KNOWLEDGE_MEDIA_ENABLED` | `false` |
 | `RAG_EVAL_ENABLED` | `false` |
 
-配置名保留原有技术标识，例如 `MINDBRIDGE_PUBLIC_URL`，不要改写为未被代码读取的 `MINDHARBOR_*` 变量。其他参数见配置文件和 `docs/`。
+例如公共应用地址使用 `MINDHARBOR_PUBLIC_URL`，知识索引重建开关使用 `MINDHARBOR_KNOWLEDGE_REINDEX_ON_START`。环境变量和 Java 配置前缀均以当前配置文件为准，其他参数见配置文件和 `docs/`。
 
 ## API 与回复恢复
 
@@ -346,6 +346,18 @@ mvn spring-boot:run
 报告默认保存到 `target/rag-eval-report.json`。完整生成会调用模型多次，耗时取决于服务性能；可通过 `RAG_EVAL_DATASET` 指向更小的数据集。Python 安装与评审模型选择见 [评测工具说明](eval/README.md)。不要在没有对应报告时声称已获得某个准确率或 RAGAS 分数。
 
 ## 部署边界与排障
+
+### 已有部署的名称迁移
+
+本次统一名称涉及 Java 包、配置前缀、数据库默认名、H2/Excel 文件名、Chroma collection、Redis key、浏览器缓存 key、MCP 工具名及邮件幂等键前缀。源码更新不会自动改写已经运行的服务、数据库、向量索引或浏览器本地数据。
+
+- 先停止新增业务请求并备份数据库、工作簿和工具账本；已生成的邮件幂等键和冻结正文不要批量改写。待处理邮件应先在原部署中完成或经人工核对后停止，避免旧任务被当作新任务重新发送。
+- 保留原 Compose 项目名或显式绑定已有命名卷，避免新目录下启动时误建空卷。已有 MySQL 数据库与账号不会因修改容器初始化环境变量而自动改名，可通过本地 Compose 覆盖文件显式指定实际的 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD`，或安排独立的数据迁移。
+- H2 与 Excel 路径应在服务停止后迁移或通过 `DB_URL`、`MCP_EXCEL_LOCAL_PATH`、`TOOLS_EXCEL_PATH` 指向现有文件；不要让新旧应用同时打开同一 H2 文件或写入同一工作簿。工具账本使用原有文件，不能删除后重放旧邮件。
+- 已有 Chroma 数据可通过 collection 配置继续使用，或从业务数据库重建；Redis 作为缓存可在切换后从持久化记录恢复。浏览器缓存 key 已更新，切换前应结束正在生成的会话并保存必要的请求 ID。
+- 主应用、独立 MCP 服务、前端和 API 调用方需一起更新工具名、配置变量及请求头。自行准备的模型也需以当前 `Modelfile`、GGUF 文件名和模型标签重新导入。
+
+### 运行与访问边界
 
 - 演示账号、HTTP Basic、默认数据库密码及基础 Compose 的端口映射用于开发。对外提供服务前，需要替换演示账号机制、配置 HTTPS、限制数据库和管理入口，并检查内置 MCP 服务端的暴露与鉴权。
 - 已有 `ddl-auto=update` 和启动期迁移逻辑，不能替代经过审查的生产数据库迁移、备份与恢复流程。Excel 当前按单实例写入维护，不应让多个独立写入者共享工作簿。

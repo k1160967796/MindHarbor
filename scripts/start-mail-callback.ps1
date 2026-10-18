@@ -1,11 +1,11 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 Set-Location -LiteralPath $projectRoot
-docker compose -p mindbridge-callback -f docker-compose.callback.yml up -d
+docker compose -p mindharbor-callback -f docker-compose.callback.yml up -d
 if ($LASTEXITCODE -ne 0) { throw 'Callback containers failed to start.' }
 $callbackBase = $null
 for ($attempt = 0; $attempt -lt 20; $attempt++) {
-    $logText = (docker compose -p mindbridge-callback -f docker-compose.callback.yml logs --no-color callback-tunnel 2>&1) -join "`n"
+    $logText = (docker compose -p mindharbor-callback -f docker-compose.callback.yml logs --no-color callback-tunnel 2>&1) -join "`n"
     $urls = [regex]::Matches($logText,'https://[a-z0-9-]+\.trycloudflare\.com')
     if ($urls.Count) { $callbackBase=$urls[$urls.Count-1].Value; break }
     Start-Sleep -Seconds 2

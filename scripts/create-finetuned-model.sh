@@ -14,7 +14,7 @@ if [ ! -x "$OLLAMA_BIN" ]; then
   exit 1
 fi
 
-"$OLLAMA_BIN" create mindbridge-qwen2.5-7b-ft:latest -f "$ROOT_DIR/models/mindbridge-qwen2.5-7b-ft/Modelfile"
+"$OLLAMA_BIN" create mindharbor-qwen2.5-7b-ft:latest -f "$ROOT_DIR/models/mindharbor-qwen2.5-7b-ft/Modelfile"
 
-echo "Created mindbridge-qwen2.5-7b-ft:latest"
+echo "Created mindharbor-qwen2.5-7b-ft:latest"
 echo "Run MindHarbor with: ./scripts/run-dev.sh"

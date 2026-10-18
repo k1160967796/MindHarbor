@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_NAME="MindHarbor"
-MODEL_DIR_NAME="mindbridge-qwen2.5-7b-ft"
-MODEL_FILE_NAME="mindbridge-qwen2.5-7b-ft-q4_k_m.gguf"
+MODEL_DIR_NAME="mindharbor-qwen2.5-7b-ft"
+MODEL_FILE_NAME="mindharbor-qwen2.5-7b-ft-q4_k_m.gguf"
 DATASET_FILE="$ROOT_DIR/data/lora/psychqa_synthetic.jsonl"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -12,7 +12,7 @@ STAGE_DIR="$DIST_DIR/split-stage-$STAMP"
 APP_ARCHIVE="$DIST_DIR/${PROJECT_NAME}-app-$STAMP.tar.gz"
 MODEL_ARCHIVE="$DIST_DIR/${PROJECT_NAME}-model-$STAMP.tar.gz"
 
-MODEL_DIR="${MODEL_DIR:-$ROOT_DIR/dist/MindBridge-langding/models/$MODEL_DIR_NAME}"
+MODEL_DIR="${MODEL_DIR:-$ROOT_DIR/dist/MindHarbor-langding/models/$MODEL_DIR_NAME}"
 if [ ! -f "$MODEL_DIR/$MODEL_FILE_NAME" ]; then
   MODEL_DIR="$ROOT_DIR/models/$MODEL_DIR_NAME"
 fi

@@ -56,7 +56,7 @@ flowchart TD
 - `ALERT_RECIPIENT_ACCOUNTS` 指定邮箱与已有账号的绑定，例如 `teacher@example.com=counselor1,other@example.com=counselor2`。
 - 创建预警时把绑定账号 ID 固定存入预警。账号必须具备 ADMIN 或 COUNSELOR 角色；未配置绑定时不允许任意管理员代替老师确认。
 - 管理员可查看全部状态；其他辅导员仅能查看自己的预警。确认操作只允许预警绑定账号。
-- `GET /api/alerts/{id}` 查看状态；`POST /api/alerts/{id}/acknowledge` 确认。POST 还要求 `X-MindBridge-Action: acknowledge`，防止跨站表单借用 Basic 登录状态。
+- `GET /api/alerts/{id}` 查看状态；`POST /api/alerts/{id}/acknowledge` 确认。POST 还要求 `X-MindHarbor-Action: acknowledge`，防止跨站表单借用 Basic 登录状态。
 - 邮件链接 `/?alert={id}` 打开网站；登录后展示确认按钮。GET、打开链接和邮件打开事件均不确认。
 - 默认首次发送成功后 600 秒仍未确认，创建第 1 轮提醒；第 1 轮成功后再等待 600 秒；最多追加 2 轮。达到上限后标记人工跟进。默认值用于项目演示，可按实际业务修改。
 - 每轮最多三次技术重试，与“最多两轮业务提醒”是两个计数。
@@ -85,7 +85,7 @@ flowchart TD
 | ALERT_MAIL_FROM | 已验证域名的发件邮箱 |
 | ALERT_MAIL_RECIPIENTS | 辅导员邮箱，多个用逗号分隔 |
 | ALERT_RECIPIENT_ACCOUNTS | 邮箱=已有账号名称，多个用逗号分隔 |
-| MINDBRIDGE_PUBLIC_URL | 可访问的 HTTPS 网站地址 |
+| MINDHARBOR_PUBLIC_URL | 可访问的 HTTPS 网站地址 |
 | ALERT_REMINDER_SECONDS | 默认 600 |
 | ALERT_MAX_REMINDERS | 默认 2 |
 

@@ -30,8 +30,8 @@ if (!$NoBuild) {
 # New service owns a separate workbook; preserve existing archive on first migration.
 $toolData=Join-Path $projectRoot 'data\mcp-tools'
 New-Item -ItemType Directory -Force -Path $toolData | Out-Null
-$oldBook=Join-Path $projectRoot 'data\mindbridge-reports.xlsx'
-$newBook=Join-Path $toolData 'mindbridge-reports.xlsx'
+$oldBook=Join-Path $projectRoot 'data\mindharbor-reports.xlsx'
+$newBook=Join-Path $toolData 'mindharbor-reports.xlsx'
 if ((Test-Path -LiteralPath $oldBook) -and !(Test-Path -LiteralPath $newBook)) {
     Copy-Item -LiteralPath $oldBook -Destination $newBook
 }
@@ -40,7 +40,7 @@ if ($LASTEXITCODE -ne 0) { throw 'MCP tools startup failed.' }
 $toolsReady=$false
 for ($attempt=0; $attempt -lt 20; $attempt++) {
     # Check the packaged MCP route, not just Spring's general health endpoint.
-    $status = docker exec mindbridge-mcp-tools sh -c 'curl -s --max-time 2 -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $MCP_SERVICE_TOKEN" -H "Accept: text/event-stream" http://localhost:8081/sse' 2>$null
+    $status = docker exec mindharbor-mcp-tools sh -c 'curl -s --max-time 2 -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $MCP_SERVICE_TOKEN" -H "Accept: text/event-stream" http://localhost:8081/sse' 2>$null
     if (($status -join '').Trim() -eq '200') { $toolsReady=$true; break }
     Start-Sleep -Seconds 2
 }
@@ -49,4 +49,4 @@ docker compose @compose up -d --no-deps --no-build app
 if ($LASTEXITCODE -ne 0) { throw 'Application startup failed.' }
 Write-Output 'MCP transport enabled. Durable pending business tasks will be processed.'
 Write-Output 'MindHarbor: http://localhost:8080'
-Write-Output 'Excel: data/mcp-tools/mindbridge-reports.xlsx'
+Write-Output 'Excel: data/mcp-tools/mindharbor-reports.xlsx'

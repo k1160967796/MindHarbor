@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ -z "${MAIL_USERNAME:-}" ]; then
-  echo "MAIL_USERNAME is required, for example: mindbridge-alerts@example.com"
+  echo "MAIL_USERNAME is required, for example: mindharbor-alerts@example.com"
   exit 1
 fi
 

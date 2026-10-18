@@ -63,10 +63,10 @@ for ($attempt = 0; $attempt -lt 120; $attempt++) {
     } catch { }
     Start-Sleep -Seconds 3
 }
-if (!$appReady) { throw 'Application not ready. Check: docker logs --tail 80 mindbridge-agent' }
+if (!$appReady) { throw 'Application not ready. Check: docker logs --tail 80 mindharbor-agent' }
 Write-Host 'MindHarbor: http://localhost:8080'
 Write-Host 'Student: student / student123; Admin: admin / admin123'
-if ($mcpEnabled) { Write-Host 'Mail: MCP -> Resend; Excel: data/mcp-tools/mindbridge-reports.xlsx' }
+if ($mcpEnabled) { Write-Host 'Mail: MCP -> Resend; Excel: data/mcp-tools/mindharbor-reports.xlsx' }
 else { Write-Host 'Local test mailbox: http://localhost:8025' }
 Write-Host 'The OCR models load on first upload; large documents take longer.'
 Start-Process 'http://localhost:8080'

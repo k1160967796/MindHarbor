@@ -8,9 +8,9 @@ RUN mvn -DskipTests package
 FROM eclipse-temurin:17-jre
 
 WORKDIR /app
-COPY --from=build /workspace/target/mindbridge-agent-0.1.0.jar /app/mindbridge-agent.jar
+COPY --from=build /workspace/target/mindharbor-agent-0.1.0.jar /app/mindharbor-agent.jar
 
 ENV SERVER_PORT=8080
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-jar", "/app/mindbridge-agent.jar"]
+ENTRYPOINT ["java", "-jar", "/app/mindharbor-agent.jar"]

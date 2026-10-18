@@ -32,7 +32,7 @@ flowchart LR
     F --> H["OpenAI兼容 Embedding<br/>embeddingJson 可选"]
     G --> I["ChromaGateway.mirror<br/>可选向量索引"]
     H --> G
-    I --> J["Chroma collection<br/>mindbridge_knowledge"]
+    I --> J["Chroma collection<br/>mindharbor_knowledge"]
 
     K["学生输入"] --> L["AgentRuntimeService"]
     L --> M["MemoryAgent"]
@@ -273,7 +273,7 @@ cosine(a, b) = dot(a, b) / (||a|| * ||b||)
 | --- | --- |
 | `USE_CHROMA` | `true` |
 | `CHROMA_BASE_URL` | `http://localhost:8000` |
-| `CHROMA_COLLECTION` | `mindbridge_knowledge` |
+| `CHROMA_COLLECTION` | `mindharbor_knowledge` |
 
 Docker Compose 中 Chroma 服务为：
 
@@ -691,7 +691,7 @@ aiClient.stream(prepared.messages())
 | 对比项 | 知识库 RAG | 用户画像语义召回 |
 | --- | --- | --- |
 | 主存储 | `knowledge_chunks` | `user_memory_items` |
-| Chroma collection | `mindbridge_knowledge` | `mindbridge_user_memory` |
+| Chroma collection | `mindharbor_knowledge` | `mindharbor_user_memory` |
 | 数据来源 | 内置/管理员维护的心理知识和校园资源 | 从用户对话中抽取的长期偏好、支持需求、背景 |
 | 触发位置 | `KnowledgeAgent` | `MemoryAgent` |
 | 是否直接进入回答知识上下文 | 是 | 否，先形成 memoryBrief |
@@ -709,7 +709,7 @@ aiClient.stream(prepared.messages())
 
 ## 16. 配置说明
 
-核心 RAG 配置在 `application.yml` 的 `mindbridge` 下。
+核心 RAG 配置在 `application.yml` 的 `mindharbor` 下。
 
 ### 16.1 知识库检索
 
@@ -718,7 +718,7 @@ aiClient.stream(prepared.messages())
 | `RAG_TOP_K` | `4` | 最终返回给回答 prompt 的检索结果数量 |
 | `USE_CHROMA` | `true` | 是否启用 Chroma 知识库索引 |
 | `CHROMA_BASE_URL` | `http://localhost:8000` | Chroma 服务地址 |
-| `CHROMA_COLLECTION` | `mindbridge_knowledge` | 知识库 collection |
+| `CHROMA_COLLECTION` | `mindharbor_knowledge` | 知识库 collection |
 | `KNOWLEDGE_CHUNK_SIZE` | `512` | 知识切块大小 |
 | `KNOWLEDGE_CHUNK_OVERLAP` | `64` | 知识切块 overlap |
 
@@ -738,7 +738,7 @@ aiClient.stream(prepared.messages())
 | --- | --- | --- |
 | `MEMORY_USE_CHROMA` | `${USE_CHROMA:true}` | 是否启用用户画像 Chroma 召回 |
 | `MEMORY_CHROMA_BASE_URL` | `${CHROMA_BASE_URL:http://localhost:8000}` | 用户画像 Chroma 地址 |
-| `MEMORY_CHROMA_COLLECTION` | `mindbridge_user_memory` | 用户画像 collection |
+| `MEMORY_CHROMA_COLLECTION` | `mindharbor_user_memory` | 用户画像 collection |
 | `MEMORY_TOP_K` | `6` | 每轮召回画像数量 |
 
 ### 16.4 RAG 评测
@@ -746,7 +746,7 @@ aiClient.stream(prepared.messages())
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `RAG_EVAL_ENABLED` | `false` | 启动后是否生成 RAGAS 输入报告 |
-| `RAG_EVAL_DATASET` | `classpath:rag-eval/mindbridge-rag-eval.json` | 评测集 |
+| `RAG_EVAL_DATASET` | `classpath:rag-eval/mindharbor-rag-eval.json` | 评测集 |
 | `RAG_EVAL_TOP_K` | `4` | 评测检索 topK |
 | `RAG_EVAL_EXIT_AFTER_RUN` | `false` | 报告生成后是否退出应用 |
 | `RAG_EVAL_OUTPUT_PATH` | `target/rag-eval-report.json` | Java 端报告输出 |
@@ -757,8 +757,8 @@ aiClient.stream(prepared.messages())
 
 默认情况下：
 
-- 数据库：H2 文件库 `./data/mindbridge`
-- 生成模型：Ollama，模型 `mindbridge-qwen2.5-7b-ft:latest`
+- 数据库：H2 文件库 `./data/mindharbor`
+- 生成模型：Ollama，模型 `mindharbor-qwen2.5-7b-ft:latest`
 - Chroma：默认启用，但服务不可用时会降级
 - Embedding：未设置 `OPENAI_API_KEY` 时不启用本地 embedding
 
@@ -781,8 +781,8 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 
 默认两个 Chroma collection：
 
-- `mindbridge_knowledge`：知识库 RAG。
-- `mindbridge_user_memory`：用户画像长期记忆。
+- `mindharbor_knowledge`：知识库 RAG。
+- `mindharbor_user_memory`：用户画像长期记忆。
 
 ## 18. RAG 评测
 
@@ -800,7 +800,7 @@ Python 脚本 `eval/run-ragas-eval.py` 再读取这个报告并运行 RAGAS。
 默认评测集：
 
 ```text
-src/main/resources/rag-eval/mindbridge-rag-eval.json
+src/main/resources/rag-eval/mindharbor-rag-eval.json
 ```
 
 该默认评测集包含 100 条人工整理样本，覆盖全部 9 个内置知识文件，风险分布为 45 条 LOW、40 条 MEDIUM、15 条 HIGH。完整评测会逐条执行检索与模型回答生成，运行时间和模型调用成本会明显高于早期 10 条 smoke set；只调试评测链路时，可以通过 `RAG_EVAL_DATASET` 指向较小的自定义 JSON 数据集。
@@ -824,11 +824,11 @@ src/main/resources/rag-eval/mindbridge-rag-eval.json
 SPRING_MAIN_WEB_APPLICATION_TYPE=none \
 AI_PROVIDER=ollama \
 OLLAMA_BASE_URL=http://localhost:11434 \
-OLLAMA_MODEL=mindbridge-qwen2.5-7b-ft:latest \
+OLLAMA_MODEL=mindharbor-qwen2.5-7b-ft:latest \
 USE_CHROMA=false \
 RAG_EVAL_ENABLED=true \
 RAG_EVAL_EXIT_AFTER_RUN=true \
-DB_URL='jdbc:h2:mem:mindbridge-rag-eval;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1' \
+DB_URL='jdbc:h2:mem:mindharbor-rag-eval;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1' \
 JAVA_HOME="$PWD/.tools/amazon-corretto-17.jdk/Contents/Home" \
   .tools/apache-maven-3.9.9/bin/mvn -Dmaven.repo.local=.m2/repository spring-boot:run
 ```

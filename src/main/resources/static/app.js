@@ -5,7 +5,7 @@ const state = {
   },
   sessionId: null,
   sending: false,
-  modelName: "mindbridge-qwen2.5-7b-ft:latest",
+  modelName: "mindharbor-qwen2.5-7b-ft:latest",
   isAdmin: false
 };
 
@@ -152,7 +152,7 @@ function showEmpty() {
     empty.className = "empty";
     empty.innerHTML = `
       <div class="empty-visual">
-        <img src="/assets/mindbridge-campus-companion.png" alt="">
+        <img src="/assets/mindharbor-campus-companion.png" alt="">
       </div>
       <div class="empty-copy">
         <p class="eyebrow">MindHarbor Companion</p>
@@ -307,7 +307,7 @@ function actionLabel(action) {
 }
 
 function displayModelName(model) {
-  if ((model || "").toLowerCase().includes("mindbridge-qwen2.5-7b-ft")) {
+  if ((model || "").toLowerCase().includes("mindharbor-qwen2.5-7b-ft")) {
     return "微调后的 Qwen2.5-7B";
   }
   return model || "Qwen2.5-7B";
@@ -805,7 +805,7 @@ async function appendAlertWorkflow(id) {
       button.onclick = async () => {
         button.disabled = true;
         try {
-          await api(`/api/alerts/${id}/acknowledge`, {method:"POST", headers:{"X-MindBridge-Action":"acknowledge"}});
+          await api(`/api/alerts/${id}/acknowledge`, {method:"POST", headers:{"X-MindHarbor-Action":"acknowledge"}});
           await refresh();
         } catch (error) { button.disabled = false; button.textContent = `确认失败，请重试：${error.message}`; }
       };
@@ -1306,7 +1306,7 @@ function parseSse(buffer, onEvent) {
 }
 
 // Persist request identity only, never credentials or psychological message text.
-function replyStorageKey() { return `mindbridge:reply:${state.auth.username}`; }
+function replyStorageKey() { return `mindharbor:reply:${state.auth.username}`; }
 function savePendingReply(value) { localStorage.setItem(replyStorageKey(), JSON.stringify(value)); }
 function clearReplyText(bubble) { bubble.dataset.raw = ""; renderAssistantContent(bubble); }
 function replyNotice(bubble, text) {

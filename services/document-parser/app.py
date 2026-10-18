@@ -59,7 +59,7 @@ def parse_image(data):
                                       cpu_threads=2,
                                       use_table_recognition=True,
                                       use_formula_recognition=True)
-        with tempfile.TemporaryDirectory(prefix="mindbridge-ocr-") as directory:
+        with tempfile.TemporaryDirectory(prefix="mindharbor-ocr-") as directory:
             image_path = Path(directory) / "page.png"
             with Image.open(io.BytesIO(data)) as image:
                 image.convert("RGB").save(image_path)

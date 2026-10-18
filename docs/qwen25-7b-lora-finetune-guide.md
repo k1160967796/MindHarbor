@@ -7,19 +7,19 @@
 本流程最终会得到以下文件：
 
 ```text
-mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
+mindharbor-qwen2.5-7b-ft-q4_k_m.gguf
 ```
 
 放到本地项目目录：
 
 ```text
-models/mindbridge-qwen2.5-7b-ft/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
+models/mindharbor-qwen2.5-7b-ft/mindharbor-qwen2.5-7b-ft-q4_k_m.gguf
 ```
 
 然后用 Ollama 注册为：
 
 ```text
-mindbridge-qwen2.5-7b-ft:latest
+mindharbor-qwen2.5-7b-ft:latest
 ```
 
 项目启动后，后端默认调用该模型。
@@ -122,8 +122,8 @@ head -n 1 data/lora/psychqa_synthetic.jsonl
 在云服务器 Terminal 中执行：
 
 ```bash
-python3 -m venv /root/mindbridge-lora-env
-source /root/mindbridge-lora-env/bin/activate
+python3 -m venv /root/mindharbor-lora-env
+source /root/mindharbor-lora-env/bin/activate
 
 pip install -U pip
 pip install -U ms-swift transformers accelerate peft datasets safetensors
@@ -132,7 +132,7 @@ pip install -U ms-swift transformers accelerate peft datasets safetensors
 安装完成后，命令行前面会出现：
 
 ```text
-(mindbridge-lora-env)
+(mindharbor-lora-env)
 ```
 
 如果模型下载较慢，可以设置镜像：
@@ -149,7 +149,7 @@ export HF_ENDPOINT=https://hf-mirror.com
 
 ```bash
 cd /root/MindHarbor
-source /root/mindbridge-lora-env/bin/activate
+source /root/mindharbor-lora-env/bin/activate
 ```
 
 执行训练命令：
@@ -175,7 +175,7 @@ CUDA_VISIBLE_DEVICES=0 swift sft \
   --save_steps 100 \
   --save_total_limit 2 \
   --logging_steps 5 \
-  --output_dir /root/MindHarbor/output/qwen25-7b-mindbridge-lora \
+  --output_dir /root/MindHarbor/output/qwen25-7b-mindharbor-lora \
   --system "你是 MindHarbor 校园心理关怀智能体，需要识别学生情绪状态，保持温和、稳定、非评判表达，遇到高风险内容优先保护学生安全。"
 ```
 
@@ -241,7 +241,7 @@ num_train_epochs = 3
 
 ```text
 Train: 100% 405/405
-last_model_checkpoint: /root/MindHarbor/output/qwen25-7b-mindbridge-lora/.../checkpoint-405
+last_model_checkpoint: /root/MindHarbor/output/qwen25-7b-mindharbor-lora/.../checkpoint-405
 ```
 
 ## 8. 找到 LoRA Adapter
@@ -249,13 +249,13 @@ last_model_checkpoint: /root/MindHarbor/output/qwen25-7b-mindbridge-lora/.../che
 训练完成后执行：
 
 ```bash
-find /root/MindHarbor/output/qwen25-7b-mindbridge-lora -name "adapter_model.safetensors"
+find /root/MindHarbor/output/qwen25-7b-mindharbor-lora -name "adapter_model.safetensors"
 ```
 
 一般会看到：
 
 ```text
-/root/MindHarbor/output/qwen25-7b-mindbridge-lora/v1-20260530-163249/checkpoint-405/adapter_model.safetensors
+/root/MindHarbor/output/qwen25-7b-mindharbor-lora/v1-20260530-163249/checkpoint-405/adapter_model.safetensors
 ```
 
 最终使用整个 `checkpoint-405` 文件夹，而不是只使用单个 `.safetensors` 文件。该目录通常包含：
@@ -288,12 +288,12 @@ adapter_model.safetensors
 
 ```bash
 cd /root/MindHarbor
-source /root/mindbridge-lora-env/bin/activate
+source /root/mindharbor-lora-env/bin/activate
 
 swift export \
-  --adapters /root/MindHarbor/output/qwen25-7b-mindbridge-lora/v1-20260530-163249/checkpoint-405 \
+  --adapters /root/MindHarbor/output/qwen25-7b-mindharbor-lora/v1-20260530-163249/checkpoint-405 \
   --merge_lora true \
-  --output_dir /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-hf
+  --output_dir /root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-hf
 ```
 
 注意：把路径里的 `v1-20260530-163249/checkpoint-405` 换成你实际生成的最终 checkpoint 路径。
@@ -301,7 +301,7 @@ swift export \
 成功时会看到：
 
 ```text
-Successfully merged LoRA and saved in `/root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-hf`.
+Successfully merged LoRA and saved in `/root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-hf`.
 ```
 
 合并后的目录是 Hugging Face 格式完整模型，通常包含：
@@ -381,8 +381,8 @@ pip install -r requirements.txt \
 cd /root/llama.cpp
 
 python3 convert_hf_to_gguf.py \
-  /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-hf \
-  --outfile /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-f16.gguf \
+  /root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-hf \
+  --outfile /root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-f16.gguf \
   --outtype f16
 ```
 
@@ -390,20 +390,20 @@ python3 convert_hf_to_gguf.py \
 
 ```text
 Writing the following files:
-/root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-f16.gguf
+/root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-f16.gguf
 n_tensors = 339, total_size = 15.2G
 ```
 
 进度条有时会长时间不刷新，可以另开一个 Terminal 看文件大小是否增长：
 
 ```bash
-watch -n 10 'date; ls -lh /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-f16.gguf; ps aux | grep convert_hf_to_gguf | grep -v grep'
+watch -n 10 'date; ls -lh /root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-f16.gguf; ps aux | grep convert_hf_to_gguf | grep -v grep'
 ```
 
 完成后会看到：
 
 ```text
-Model successfully exported to /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-f16.gguf
+Model successfully exported to /root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-f16.gguf
 ```
 
 ## 11. 量化为 Q4_K_M
@@ -435,8 +435,8 @@ cmake --build build --config Release -j
 
 ```bash
 ./build/bin/llama-quantize \
-  /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-f16.gguf \
-  /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf \
+  /root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-f16.gguf \
+  /root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-q4_k_m.gguf \
   Q4_K_M
 ```
 
@@ -450,7 +450,7 @@ quant size = 4460.45 MiB
 确认文件：
 
 ```bash
-ls -lh /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
+ls -lh /root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-q4_k_m.gguf
 ```
 
 正常大小约：
@@ -462,7 +462,7 @@ ls -lh /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
 量化成功后，可以删除 F16 文件节省云服务器空间：
 
 ```bash
-rm -f /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-f16.gguf
+rm -f /root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-f16.gguf
 ```
 
 ## 12. 下载最终模型到本地
@@ -470,7 +470,7 @@ rm -f /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-f16.gguf
 最终需要下载：
 
 ```text
-/root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
+/root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-q4_k_m.gguf
 ```
 
 如果使用 JupyterLab，可以在左侧文件浏览器找到该文件，右键下载。
@@ -478,22 +478,22 @@ rm -f /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-f16.gguf
 如果 SSH 可用：
 
 ```bash
-scp root@服务器IP:/root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf \
-  ./models/mindbridge-qwen2.5-7b-ft/
+scp root@服务器IP:/root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-q4_k_m.gguf \
+  ./models/mindharbor-qwen2.5-7b-ft/
 ```
 
 下载到本地项目后，确认：
 
 ```bash
-ls -lh models/mindbridge-qwen2.5-7b-ft/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
+ls -lh models/mindharbor-qwen2.5-7b-ft/mindharbor-qwen2.5-7b-ft-q4_k_m.gguf
 ```
 
 ## 13. 本地 Ollama 接入
 
-确保本地 `models/mindbridge-qwen2.5-7b-ft/Modelfile` 内容类似：
+确保本地 `models/mindharbor-qwen2.5-7b-ft/Modelfile` 内容类似：
 
 ```text
-FROM ./mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
+FROM ./mindharbor-qwen2.5-7b-ft-q4_k_m.gguf
 
 SYSTEM """
 你是 MindHarbor 校园心理关怀智能体，由 Qwen2.5-7B 面向校园心理陪伴场景适配而来。
@@ -523,7 +523,7 @@ cd MindHarbor
 应看到：
 
 ```text
-mindbridge-qwen2.5-7b-ft:latest
+mindharbor-qwen2.5-7b-ft:latest
 ```
 
 启动项目：
@@ -543,17 +543,17 @@ http://localhost:8080
 默认模型配置：
 
 ```yaml
-mindbridge:
+mindharbor:
   ai:
     provider: ${AI_PROVIDER:ollama}
     ollama:
-      model: ${OLLAMA_MODEL:mindbridge-qwen2.5-7b-ft:latest}
+      model: ${OLLAMA_MODEL:mindharbor-qwen2.5-7b-ft:latest}
 ```
 
 启动脚本默认模型：
 
 ```bash
-OLLAMA_MODEL="${OLLAMA_MODEL:-mindbridge-qwen2.5-7b-ft:latest}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-mindharbor-qwen2.5-7b-ft:latest}"
 ```
 
 Ollama 客户端请求体会把该模型名传给 `/api/chat`：
@@ -567,7 +567,7 @@ Ollama 客户端请求体会把该模型名传给 `/api/chat`：
 ```text
 application.yml / run-dev.sh
         ↓
-mindbridge-qwen2.5-7b-ft:latest
+mindharbor-qwen2.5-7b-ft:latest
         ↓
 OllamaAiClient
         ↓
@@ -575,7 +575,7 @@ Ollama
         ↓
 Modelfile
         ↓
-mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
+mindharbor-qwen2.5-7b-ft-q4_k_m.gguf
 ```
 
 ## 15. 常见问题
@@ -623,7 +623,7 @@ find /root /MindHarbor -name "psychqa_synthetic.jsonl" 2>/dev/null
 先检查文件大小是否增长：
 
 ```bash
-ls -lh /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-f16.gguf
+ls -lh /root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-f16.gguf
 ps aux | grep convert_hf_to_gguf | grep -v grep
 ```
 
@@ -640,8 +640,8 @@ df -h
 清理残缺文件和不再需要的目录：
 
 ```bash
-rm -f /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
-rm -rf /root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-hf
+rm -f /root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-q4_k_m.gguf
+rm -rf /root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-hf
 rm -rf /root/.cache/modelscope/hub/models/Qwen/Qwen2___5-7B-Instruct
 rm -rf /root/.cache/modelscope/hub/models/Qwen/Qwen2.5-7B-Instruct
 df -h
@@ -701,7 +701,7 @@ pip install numpy==1.26.4 \
 确认以下文件已经下载到本地：
 
 ```text
-models/mindbridge-qwen2.5-7b-ft/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
+models/mindharbor-qwen2.5-7b-ft/mindharbor-qwen2.5-7b-ft-q4_k_m.gguf
 ```
 
 并确认本地 Ollama 已经创建：
@@ -713,7 +713,7 @@ models/mindbridge-qwen2.5-7b-ft/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
 看到：
 
 ```text
-mindbridge-qwen2.5-7b-ft:latest
+mindharbor-qwen2.5-7b-ft:latest
 ```
 
 即可在云平台释放实例。注意：如果云平台有“关机”和“释放”，通常应选择“释放”，避免继续计费。
@@ -723,17 +723,17 @@ mindbridge-qwen2.5-7b-ft:latest
 云端训练产物：
 
 ```text
-/root/MindHarbor/output/qwen25-7b-mindbridge-lora/.../checkpoint-405
-/root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-hf
-/root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-f16.gguf
-/root/MindHarbor/output/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
+/root/MindHarbor/output/qwen25-7b-mindharbor-lora/.../checkpoint-405
+/root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-hf
+/root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-f16.gguf
+/root/MindHarbor/output/mindharbor-qwen2.5-7b-ft-q4_k_m.gguf
 ```
 
 最终交付/运行只需要：
 
 ```text
-models/mindbridge-qwen2.5-7b-ft/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
-models/mindbridge-qwen2.5-7b-ft/Modelfile
+models/mindharbor-qwen2.5-7b-ft/mindharbor-qwen2.5-7b-ft-q4_k_m.gguf
+models/mindharbor-qwen2.5-7b-ft/Modelfile
 scripts/create-finetuned-model.sh
 scripts/run-dev.sh
 ```

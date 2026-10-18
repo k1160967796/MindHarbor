@@ -1,0 +1,25 @@
+target/
+.m2/
+.tools/
+.idea/
+.vscode/
+*.iml
+data/
+logs/
+.DS_Store
+*.log
+
+# Local mail credentials
+.env.resend.local
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Temporary files
+tmp/
+
+# Python bytecode caches
+__pycache__/
+*.py[cod]

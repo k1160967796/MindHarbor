@@ -1,0 +1,25 @@
+server:
+  port: 8081
+spring:
+  application:
+    name: mindbridge-mcp-tools
+  datasource:
+    url: ${TOOLS_DB_URL:jdbc:h2:file:/app/data/tool-ledger;DB_CLOSE_ON_EXIT=FALSE}
+    username: sa
+    password: ${TOOLS_DB_PASSWORD:}
+  ai:
+    mcp:
+      server:
+        enabled: true
+        name: mindbridge-tools
+        version: 0.2.0
+        type: SYNC
+        sse-endpoint: /sse
+        sse-message-endpoint: /mcp/messages
+tools:
+  token: ${MCP_SERVICE_TOKEN:}
+  excel-path: ${TOOLS_EXCEL_PATH:/app/data/mindbridge-reports.xlsx}
+  resend-key: ${RESEND_API_KEY:}
+  resend-base: ${TOOLS_RESEND_BASE:https://api.resend.com}
+  allowed-from: ${ALERT_MAIL_FROM:onboarding@resend.dev}
+  allowed-recipients: ${ALERT_MAIL_RECIPIENTS:}

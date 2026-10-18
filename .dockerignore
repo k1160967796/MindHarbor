@@ -1,0 +1,17 @@
+.git/
+.idea/
+.vscode/
+.m2/
+.tools/
+target/
+dist/
+data/
+models/
+logs/
+*.log
+*.tar
+*.tar.gz
+*.zip
+*.pdf
+.DS_Store
+.env.resend.local

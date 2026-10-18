@@ -1,0 +1,6 @@
+# Enable callback verification only; leave the existing mail sender unchanged.
+services:
+  app:
+    environment:
+      RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET:?Set webhook signing secret in .env.resend.local}
+      ALERT_RECIPIENT_ACCOUNTS: ${ALERT_RECIPIENT_ACCOUNTS:?Set test recipient account binding}

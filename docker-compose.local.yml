@@ -1,0 +1,31 @@
+# Windows local deployment: keep the host MySQL at 3306 untouched.
+services:
+  mysql:
+    ports: !override
+      - "127.0.0.1:3307:3306"
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.runtime
+    image: mindbridge-agent:local
+    environment:
+      OLLAMA_MODEL: qwen2.5:1.5b
+      # Shorter review excerpts keep the local 1.5B model within the shared RAG budget.
+      RAG_RERANKER_MAX_CONTENT_CHARS: "200"
+      KNOWLEDGE_VISION_MODEL: qwen2.5vl:3b
+      KNOWLEDGE_MEDIA_TIMEOUT_SECONDS: "600"
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx768m"
+      MCP_EMAIL_MODE: smtp
+      # Local Mailpit demo: this mailbox belongs to the demo admin account.
+      ALERT_RECIPIENT_ACCOUNTS: counselor-alerts@example.com=admin
+      ALERT_REMINDER_SECONDS: "600"
+      ALERT_MAX_REMINDERS: "2"
+      MAIL_SMTP_AUTH: "false"
+      OPENAI_BASE_URL: http://host.docker.internal:11434
+      OPENAI_API_KEY: ollama-local
+      OPENAI_EMBEDDING_MODEL: bge-m3
+      CHROMA_COLLECTION: mindbridge_knowledge_bge_m3
+      MEMORY_CHROMA_COLLECTION: mindbridge_memory_bge_m3
+      MINDBRIDGE_KNOWLEDGE_REINDEX_ON_START: "true"
+    ports: !override
+      - "127.0.0.1:8080:8080"

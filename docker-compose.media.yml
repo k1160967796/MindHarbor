@@ -1,0 +1,24 @@
+# Merge with the main compose file. First use downloads OCR and vision weights separately.
+services:
+  app:
+    environment:
+      KNOWLEDGE_MEDIA_ENABLED: "true"
+      KNOWLEDGE_OCR_BASE_URL: http://document-parser:8091
+      KNOWLEDGE_OCR_TOKEN: ${KNOWLEDGE_OCR_TOKEN:-}
+      KNOWLEDGE_VISION_BASE_URL: ${KNOWLEDGE_VISION_BASE_URL:-http://host.docker.internal:11434}
+      KNOWLEDGE_VISION_MODEL: ${KNOWLEDGE_VISION_MODEL:-qwen2.5vl:7b}
+      KNOWLEDGE_MEDIA_TIMEOUT_SECONDS: ${KNOWLEDGE_MEDIA_TIMEOUT_SECONDS:-300}
+    depends_on:
+      document-parser:
+        condition: service_started
+  document-parser:
+    build: ./services/document-parser
+    environment:
+      DOCUMENT_PARSER_TOKEN: ${KNOWLEDGE_OCR_TOKEN:-}
+      PADDLE_DEVICE: cpu
+    volumes:
+      - document-models:/root/.paddlex
+    ports:
+      - "127.0.0.1:8091:8091"
+volumes:
+  document-models:

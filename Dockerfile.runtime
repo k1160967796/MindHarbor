@@ -1,0 +1,6 @@
+# Local startup uses the JAR already built with the installed JDK/Maven.
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+COPY target/mindbridge-agent-0.1.0.jar /app/mindbridge-agent.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/mindbridge-agent.jar"]

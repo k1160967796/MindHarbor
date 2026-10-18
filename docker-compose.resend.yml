@@ -1,0 +1,14 @@
+# Optional production mail adapter. Requires a verified sender, provider credentials,
+# a reachable HTTPS app URL and a signed webhook configured in the provider console.
+services:
+  app:
+    environment:
+      MAIL_PROVIDER: resend
+      RESEND_API_KEY: ${RESEND_API_KEY:?Set the Resend API key in the deployment environment}
+      RESEND_WEBHOOK_SECRET: ${RESEND_WEBHOOK_SECRET:?Set the webhook signing secret}
+      ALERT_MAIL_FROM: ${ALERT_MAIL_FROM:?Set a verified sender address}
+      ALERT_MAIL_RECIPIENTS: ${ALERT_MAIL_RECIPIENTS:?Set the counselor email addresses}
+      ALERT_RECIPIENT_ACCOUNTS: ${ALERT_RECIPIENT_ACCOUNTS:?Map each recipient email to its counselor username}
+      MINDBRIDGE_PUBLIC_URL: ${MINDBRIDGE_PUBLIC_URL:?Set the public HTTPS application URL}
+      ALERT_REMINDER_SECONDS: ${ALERT_REMINDER_SECONDS:-600}
+      ALERT_MAX_REMINDERS: ${ALERT_MAX_REMINDERS:-2}

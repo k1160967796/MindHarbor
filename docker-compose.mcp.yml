@@ -1,0 +1,31 @@
+# Standalone authenticated MCP tools. Only the tools container receives the provider API key.
+services:
+  mcp-tools:
+    build: ./services/mcp-tools
+    image: mindbridge-mcp-tools:local
+    container_name: mindbridge-mcp-tools
+    restart: unless-stopped
+    environment:
+      MCP_SERVICE_TOKEN: ${MCP_SERVICE_TOKEN:?Set MCP_SERVICE_TOKEN in .env.resend.local}
+      RESEND_API_KEY: ${RESEND_API_KEY:?Set RESEND_API_KEY in .env.resend.local}
+      ALERT_MAIL_FROM: ${ALERT_MAIL_FROM:-onboarding@resend.dev}
+      ALERT_MAIL_RECIPIENTS: ${ALERT_MAIL_RECIPIENTS:?Set ALERT_MAIL_RECIPIENTS}
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx384m
+    volumes:
+      - ./data/mcp-tools:/app/data
+  app:
+    depends_on:
+      - mcp-tools
+    environment:
+      MCP_REMOTE_ENABLED: "true"
+      MCP_REMOTE_URL: http://mcp-tools:8081
+      MCP_SERVICE_TOKEN: ${MCP_SERVICE_TOKEN:?Set MCP_SERVICE_TOKEN}
+      # The SDK connection above replaces Spring's auto-created client.
+      MCP_CLIENT_ENABLED: "false"
+      MCP_SERVER_ENABLED: "false"
+      MCP_EXCEL_MODE: mcp
+      MAIL_PROVIDER: mcp-resend
+      ALERT_MAIL_FROM: ${ALERT_MAIL_FROM:-onboarding@resend.dev}
+      ALERT_MAIL_RECIPIENTS: ${ALERT_MAIL_RECIPIENTS:?Set ALERT_MAIL_RECIPIENTS}
+      ALERT_RECIPIENT_ACCOUNTS: ${ALERT_RECIPIENT_ACCOUNTS:?Set ALERT_RECIPIENT_ACCOUNTS}
+      MINDBRIDGE_PUBLIC_URL: ${MINDBRIDGE_PUBLIC_URL:-http://localhost:8080}

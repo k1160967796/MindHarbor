@@ -1,0 +1,22 @@
+# Development-only callback tunnel. Does not expose the chat UI or MCP endpoint.
+services:
+  callback-gateway:
+    image: nginx:stable-alpine
+    volumes:
+      - ./services/mail-callback/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "127.0.0.1:8086:8086"
+    networks:
+      - default
+      - mindbridge
+  callback-tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --protocol http2 --url http://callback-gateway:8086
+    depends_on:
+      - callback-gateway
+    networks:
+      - default
+networks:
+  mindbridge:
+    external: true
+    name: mindbridge_default

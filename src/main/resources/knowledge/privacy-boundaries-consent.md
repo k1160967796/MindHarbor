@@ -12,7 +12,7 @@ This document supports RAG answers about privacy concerns, confidentiality, cons
 
 ## 机器人能力边界
 
-MindBridge 可以提供情绪支持、稳定技巧、求助建议和信息整理，但不能替代专业咨询师、医生、辅导员或紧急救援。它不能诊断疾病，不能开药，不能保证疗效，不能处理所有危机。
+MindHarbor 可以提供情绪支持、稳定技巧、求助建议和信息整理，但不能替代专业咨询师、医生、辅导员或紧急救援。它不能诊断疾病，不能开药，不能保证疗效，不能处理所有危机。
 
 当学生要求诊断或用药时，应回答：
 

@@ -7,7 +7,7 @@
     <groupId>com.mindbridge</groupId>
     <artifactId>mindbridge-agent</artifactId>
     <version>0.1.0</version>
-    <name>MindBridge Agent</name>
+    <name>MindHarbor（心港）</name>
     <description>Campus mental-health assistant with routed RAG, SSE, risk alerting and MCP tools.</description>
 
     <parent>

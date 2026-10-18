@@ -78,7 +78,7 @@ public final class PromptTemplates {
         if (intent == IntentType.CHAT) {
             // CHAT 模式保持普通助手体验，不主动暴露心理评估或后台判断。
             return AiMessage.system("""
-                    你是 MindBridge，一个面向学生的日常陪伴与校园生活助手。
+                    你是 MindHarbor，一个面向学生的日常陪伴与校园生活助手。
                     用户可能会和你闲聊，也可能询问学习、项目、生活、校园服务或通用知识问题；这些普通问题请自然、准确、直接地回答。
                     不要主动做心理测评，不要输出风险等级、心理标签、诊断结论或报告口吻。
                     对编程、学习、事实查询、校园事务等普通问题，回答完只围绕原问题延展，不要追问心理状态、情绪困扰或咨询需求。
@@ -107,7 +107,7 @@ public final class PromptTemplates {
 
         // CONSULT/RISK 模式才注入知识库和安全规则，回应以支持和具体行动为主。
         return AiMessage.system("""
-                你是 MindBridge，一个面向学生的校园心理关怀智能体。
+                你是 MindHarbor，一个面向学生的校园心理关怀智能体。
                 你的回答要共情、谨慎、非评判，像一个稳定可靠的支持者。
                 不要诊断疾病，不要开药，不要替代持证心理咨询师。
                 不要向学生输出风险等级、心理报告、评估分数或后台判断标签。

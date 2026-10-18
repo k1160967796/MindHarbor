@@ -155,7 +155,7 @@ function showEmpty() {
         <img src="/assets/mindbridge-campus-companion.png" alt="">
       </div>
       <div class="empty-copy">
-        <p class="eyebrow">MindBridge Companion</p>
+        <p class="eyebrow">MindHarbor Companion</p>
         <h3>把今天的想法放在这里</h3>
         <p>可以聊学习计划、概念理解、校园生活，也可以把一团乱的心情慢慢拆开。</p>
       </div>

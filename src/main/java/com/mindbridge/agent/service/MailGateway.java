@@ -38,8 +38,8 @@ public class MailGateway {
             task.provider="mcp-resend".equalsIgnoreCase(config.getProvider())?"RESEND_MCP":resend()?"RESEND":app.getMcp().getEmail().getMode().toUpperCase(Locale.ROOT);
             task.idempotencyKey="mindbridge-mail-"+UUID.randomUUID();
             String link=config.getPublicUrl().replaceAll("/+$","")+"/?alert="+alert.getId();
-            String subject=task.reminderRound==0?"【MindBridge 高风险预警】待确认 #"+alert.getId()
-                    :"【MindBridge 待确认提醒 "+task.reminderRound+"】预警 #"+alert.getId();
+            String subject=task.reminderRound==0?"【MindHarbor 高风险预警】待确认 #"+alert.getId()
+                    :"【MindHarbor 待确认提醒 "+task.reminderRound+"】预警 #"+alert.getId();
             // Keep sensitive conversation content in the authenticated application.
             task.mailPayload=json.writeValueAsString(Map.of("from",app.getMcp().getEmail().getFrom(),
                     "to",List.of(task.recipient),"subject",subject,"text",

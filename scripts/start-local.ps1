@@ -64,7 +64,7 @@ for ($attempt = 0; $attempt -lt 120; $attempt++) {
     Start-Sleep -Seconds 3
 }
 if (!$appReady) { throw 'Application not ready. Check: docker logs --tail 80 mindbridge-agent' }
-Write-Host 'MindBridge: http://localhost:8080'
+Write-Host 'MindHarbor: http://localhost:8080'
 Write-Host 'Student: student / student123; Admin: admin / admin123'
 if ($mcpEnabled) { Write-Host 'Mail: MCP -> Resend; Excel: data/mcp-tools/mindbridge-reports.xlsx' }
 else { Write-Host 'Local test mailbox: http://localhost:8025' }

@@ -6,7 +6,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 
 /**
- * MindBridge Agent Loop 运行时。
+ * MindHarbor Agent Loop 运行时。
  *
  * <p>每轮学生输入都会进入有限步循环：读取记忆、主控路由、知识检索、风险守护和回复规划。
  * 这里不是无限自主循环，而是受步数限制的安全 agent loop，适合心理安全场景。</p>

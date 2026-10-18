@@ -114,7 +114,7 @@ public class MemoryAgent implements MindBridgeAgent {
         try {
             String summary = aiClient.complete(List.of(
                     AiMessage.system("""
-                            你是 MindBridge 的 MemoryAgent。
+                            你是 MindHarbor 的 MemoryAgent。
                             你的任务是从最近对话中提取对当前输入有用的短期/长期记忆。
                             只输出 1-3 条中文要点，不要输出风险等级、诊断结论或后台标签。
                             如果历史与当前输入无关，只输出：无相关历史记忆。

@@ -11,7 +11,7 @@ from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
-app = FastAPI(title="MindBridge document parser")
+app = FastAPI(title="MindHarbor document parser")
 _pipeline = None
 _lock = threading.Lock()
 MAX_BYTES = 32 * 1024 * 1024

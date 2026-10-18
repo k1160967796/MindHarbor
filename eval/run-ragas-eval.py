@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run RAGAS metrics over the MindBridge RAG evaluation report."""
+"""Run RAGAS metrics over the MindHarbor RAG evaluation report."""
 
 from __future__ import annotations
 

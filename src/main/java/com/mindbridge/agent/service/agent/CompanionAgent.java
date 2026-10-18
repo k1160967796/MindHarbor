@@ -50,7 +50,7 @@ public class CompanionAgent implements MindBridgeAgent {
         try {
             String plan = aiClient.complete(List.of(
                     AiMessage.system("""
-                            你是 MindBridge 的 CompanionAgent。
+                            你是 MindHarbor 的 CompanionAgent。
                             你负责普通学习、生活、校园事务、编程和日常聊天。
                             请根据当前输入和记忆摘要，制定一句简短回复策略。
                             不要做心理评估，不要输出风险等级，不要替用户下诊断。

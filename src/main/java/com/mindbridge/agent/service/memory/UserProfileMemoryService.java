@@ -151,7 +151,7 @@ public class UserProfileMemoryService {
         try {
             return parseCandidates(aiClient.complete(List.of(
                     AiMessage.system("""
-                            你是 MindBridge 的用户画像记忆抽取器。
+                            你是 MindHarbor 的用户画像记忆抽取器。
                             只提取对后续对话有稳定帮助的长期记忆：用户偏好、沟通风格、支持需求、个人背景、反复出现的状态模式。
                             不要保存诊断结论、风险等级、手机号、学号、证件号、真实姓名、详细地址或一次性的临时任务。
                             若没有值得长期保存的信息，只输出 []。

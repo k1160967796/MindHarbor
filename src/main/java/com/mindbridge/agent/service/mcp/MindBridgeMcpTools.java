@@ -15,7 +15,7 @@ public class MindBridgeMcpTools {
 
     @Tool(
             name = McpToolNames.WRITE_EXCEL_REPORT,
-            description = "Write a MindBridge psychological risk report to the configured Excel workbook."
+            description = "Write a MindHarbor psychological risk report to the configured Excel workbook."
     )
     public String writeExcelReport(
             @ToolParam(description = "Internal report id") Long reportId,
@@ -48,7 +48,7 @@ public class MindBridgeMcpTools {
 
     @Tool(
             name = McpToolNames.SEND_RISK_ALERT,
-            description = "Send a MindBridge high-risk psychological alert to a counselor or administrator."
+            description = "Send a MindHarbor high-risk psychological alert to a counselor or administrator."
     )
     public String sendRiskAlert(
             @ToolParam(description = "Alert recipient email address") String recipient,

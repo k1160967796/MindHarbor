@@ -66,7 +66,7 @@ public class CounselorAgent implements MindBridgeAgent {
         try {
             String raw = aiClient.completeWithin(List.of(
                     AiMessage.system("""
-                            你是 MindBridge 的 CounselorAgent。
+                            你是 MindHarbor 的 CounselorAgent。
                             只制定内部提纲，不写给学生的完整回答，不写安慰段落、示例或解释。
                             严格输出 JSON：{"focus":"回应要点，最多30字符","action":"一个行动方向，最多40字符"}。
                             两个字段都用短语。不得自行降低给定风险，高风险以确认当前安全和寻求现实支持为行动方向。

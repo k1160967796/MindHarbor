@@ -141,7 +141,7 @@ public class RagEvaluationService {
                 : String.join("\n\n---\n\n", retrievedContexts);
         return aiClient.complete(List.of(
                 AiMessage.system("""
-                        你是 MindBridge 的 RAG 回答生成器，用于 RAGAS 评测样本生成。
+                        你是 MindHarbor 的 RAG 回答生成器，用于 RAGAS 评测样本生成。
                         请依据检索上下文回答学生问题，语气温和、具体、克制。
                         如果上下文不足，只给出安全的一般支持建议，不要编造校园流程。
                         禁止诊断疾病、开药、透露后台风险等级、Excel、MCP 或报告流程。

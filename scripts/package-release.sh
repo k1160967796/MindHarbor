@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJECT_NAME="MindBridge"
+PROJECT_NAME="MindHarbor"
 DATASET_FILE="$ROOT_DIR/data/lora/psychqa_synthetic.jsonl"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 DIST_DIR="$ROOT_DIR/dist"

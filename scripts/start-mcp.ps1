@@ -48,5 +48,5 @@ if (!$toolsReady) { throw 'Authenticated MCP endpoint did not become ready; appl
 docker compose @compose up -d --no-deps --no-build app
 if ($LASTEXITCODE -ne 0) { throw 'Application startup failed.' }
 Write-Output 'MCP transport enabled. Durable pending business tasks will be processed.'
-Write-Output 'MindBridge: http://localhost:8080'
+Write-Output 'MindHarbor: http://localhost:8080'
 Write-Output 'Excel: data/mcp-tools/mindbridge-reports.xlsx'

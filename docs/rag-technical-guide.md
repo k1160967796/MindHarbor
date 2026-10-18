@@ -4,7 +4,7 @@
 
 RAG 是 Retrieval-Augmented Generation，即检索增强生成。它的核心思想是：模型生成回答前，先从可控知识库中检索和当前问题相关的资料，再把这些资料作为上下文交给模型生成回答。
 
-在 MindBridge 中，RAG 不只是一个“向量库查询”功能，而是被放进校园心理关怀的多 Agent 流程里，承担三个目标：
+在 MindHarbor 中，RAG 不只是一个“向量库查询”功能，而是被放进校园心理关怀的多 Agent 流程里，承担三个目标：
 
 1. 降低幻觉：心理支持、校园求助流程、危机安全建议等内容优先来自项目内置或管理员维护的知识库。
 2. 控制边界：普通聊天、学习、编程、校园事务不触发心理 RAG，避免把正常问题过度心理化。
@@ -19,7 +19,7 @@ RAG 是 Retrieval-Augmented Generation，即检索增强生成。它的核心思
 
 ## 2. 总体架构
 
-MindBridge 的 RAG 采用“数据库主存储 + 可选 Chroma 向量索引 + BM25 本地兜底 + Agent 路由”的架构。
+MindHarbor 的 RAG 采用“数据库主存储 + 可选 Chroma 向量索引 + BM25 本地兜底 + Agent 路由”的架构。
 
 ```mermaid
 flowchart LR

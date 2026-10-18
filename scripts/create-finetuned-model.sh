@@ -17,4 +17,4 @@ fi
 "$OLLAMA_BIN" create mindbridge-qwen2.5-7b-ft:latest -f "$ROOT_DIR/models/mindbridge-qwen2.5-7b-ft/Modelfile"
 
 echo "Created mindbridge-qwen2.5-7b-ft:latest"
-echo "Run MindBridge with: ./scripts/run-dev.sh"
+echo "Run MindHarbor with: ./scripts/run-dev.sh"

@@ -1,6 +1,6 @@
-# MindBridge Agent
+# MindHarbor（心港）
 
-MindBridge 是一个校园心理健康智能体
+MindHarbor（心港）是一个校园心理健康智能体
 
 - 动态路由 RAG：先识别 `CHAT / CONSULT / RISK`，闲聊不查知识库，咨询与风险消息才进入检索增强。
 - SSE 流式输出：`/api/chat/stream` 返回 `text/event-stream`，适合前端做打字机效果。
@@ -68,7 +68,7 @@ MemoryAgent
 先进入项目根目录：
 
 ```bash
-cd /path/to/MindBridge
+cd /path/to/MindHarbor
 ```
 
 可用下列命令检查本地环境：
@@ -149,13 +149,13 @@ Compose 会启动以下服务：
 
 | 服务 | 端口 | 说明 |
 | --- | --- | --- |
-| MindBridge | `8080` | Web 界面与 API |
+| MindHarbor | `8080` | Web 界面与 API |
 | MySQL | `3306` | 业务数据 |
 | Redis | `6379` | 短期会话记忆 |
 | Chroma | `8000` | 知识库和用户画像向量检索 |
 | Mailpit | `1025` / `8025` | SMTP 测试服务 / 管理页面 |
 
-Docker 中的 MindBridge 默认访问宿主机 `11434` 端口上的 Ollama，因此需先确保 Ollama 和模型已就绪：
+Docker 中的 MindHarbor 默认访问宿主机 `11434` 端口上的 Ollama，因此需先确保 Ollama 和模型已就绪：
 
 ```bash
 ollama list
@@ -306,14 +306,14 @@ models/mindbridge-qwen2.5-7b-ft/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
 首次运行或重新导入模型时执行：
 
 ```bash
-cd MindBridge
+cd MindHarbor
 ./scripts/create-finetuned-model.sh
 ```
 
 之后直接启动项目：
 
 ```bash
-cd MindBridge
+cd MindHarbor
 ./scripts/run-dev.sh
 ```
 
@@ -322,7 +322,7 @@ cd MindBridge
 也可以不用脚本，手动指定本地模型启动：
 
 ```bash
-cd MindBridge
+cd MindHarbor
 AI_PROVIDER=ollama \
 OLLAMA_BASE_URL=http://localhost:11434 \
 OLLAMA_MODEL=mindbridge-qwen2.5-7b-ft:latest \
@@ -333,7 +333,7 @@ JAVA_HOME="$PWD/.tools/amazon-corretto-17.jdk/Contents/Home" \
 ## 接入 OpenAI
 
 ```bash
-cd MindBridge
+cd MindHarbor
 AI_PROVIDER=openai \
 OPENAI_API_KEY=你的_API_Key \
 OPENAI_MODEL=gpt-4o-mini \

@@ -11,7 +11,7 @@ spring:
         name: mindbridge-mcp-server
         version: 0.1.0
         type: SYNC
-        instructions: "MindBridge MCP server exposes psychological report archival and high-risk alert tools."
+        instructions: "MindHarbor MCP server exposes psychological report archival and high-risk alert tools."
         sse-endpoint: ${MCP_SERVER_SSE_ENDPOINT:/sse}
         sse-message-endpoint: ${MCP_SERVER_MESSAGE_ENDPOINT:/mcp/messages}
         capabilities:

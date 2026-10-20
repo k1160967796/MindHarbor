@@ -12,6 +12,8 @@
 | 多 Agent | 记忆读取、主控路由、知识检索、风险守护、陪伴或咨询回复规划；Agent loop 最多 8 步 |
 | 流式回复 | SSE 输出；可重试的生成失败最多 3 次总尝试；支持按请求 ID 查询、恢复和重新生成 |
 | 检索增强 | BM25、可选向量召回、query 改写、候选评审与重排；资源不可用时保留检索降级路径 |
+| 标签候选缓存 | 将背景、情绪、表现及同义表达归一为标签，复用公共候选片段；命中后仍进行相关性评审 |
+| 已审核知识包 | 管理员审核后，在明确适用范围内直接复用知识块，跳过召回与候选评审；仍执行风险评估 |
 | 对话与画像记忆 | H2/MySQL 保存持久记录，Redis 缓存近期对话，Chroma 可用于画像语义召回 |
 | 风险报告与工具任务 | 咨询/风险分支按规则生成后台报告；Excel 与高风险邮件是独立持久化任务，学生回复不等待工具执行 |
 | 邮件跟进 | 支持日志、SMTP 以及独立 MCP/Resend 模式；区分发送受理、投递和辅导员主动确认 |
@@ -199,6 +201,28 @@ PowerShell 使用 `$env:变量名 = '值'` 设置相同变量。密钥只放本�
 
 详细实现见 [RAG 技术说明](docs/rag-technical-guide.md)。
 
+### 标签缓存与已审核知识包
+
+知识复用分为两层，均不缓存学生的最终回答：
+
+1. **候选缓存**：按“背景 + 情绪 + 表现”匹配标准标签。同义表达可归为同一标签，例如“睡不着 / 难以入睡”。命中后重新读取并核验知识块，跳过重复召回，但仍评审其相关性和充分性。
+2. **已审核知识包**：管理员在“常见问题知识包”中核对实际知识原文并启用后，符合严格适用范围的请求可跳过召回与评审。审核针对知识包及其版本，**不是每次对话都需要批准**。
+
+当前标签目录有 **12 组**：8 组支持审核后直用，另 4 组仍需逐次评审。标签覆盖考试、学业任务、课堂展示、同学沟通、实习申请等场景；配置位于 `src/main/resources/knowledge-tags/catalog.json`。
+
+```text
+咨询请求 -> 标签及适用范围检查
+  ├─ 有效的已审核知识包 -> 复用已发布原文 -> RiskGuardian
+  └─ 无匹配 / 未审核 / 已失效 -> 候选缓存或正常召回 -> 评审 -> RiskGuardian
+RiskGuardian 判断为中高风险 -> 撤销直用知识包 -> 正常知识检索与评审
+```
+
+否定、背景冲突、多种表现、危机信号等不满足规则时会绕过直用。知识包最多包含 4 块、6000 字符；管理员审批有效期为 30 天，Redis 缓存默认 1800 秒。数据库审批状态与知识来源内容均会重新核验，禁用、过期、来源改变或不再发布后不能继续直用旧包。普通候选缓存也会在知识更新后失效。
+
+新部署不会自动批准知识包。登录管理员页面，打开“常见问题知识包”，核对适用范围和来源内容后再启用。运行轨迹中的 `SKIPPED_APPROVED_PACK` 表示这次跳过了知识评审，**不表示跳过风险评估**。
+
+详细边界见 [标签缓存](docs/knowledge-tag-cache.md)、[知识包审核](docs/reviewed-knowledge-packs.md) 和 [PsychQA 标签扩充与验证](docs/psychqa-tag-expansion.md)。
+
 ## Docker 与扩展功能
 
 ### 基础容器模式
@@ -283,6 +307,9 @@ Excel 和邮件独立执行；`SUCCESS / ACCEPTED`、`DELIVERED`、辅导员主�
 | `MCP_EXCEL_MODE` / `MCP_EMAIL_MODE` | `local` / `log` |
 | `MAIL_PROVIDER` | `legacy`；可选直接 `resend` 或独立工具 `mcp-resend` |
 | `KNOWLEDGE_MEDIA_ENABLED` | `false` |
+| `KNOWLEDGE_TAG_CACHE_ENABLED` | `true`；普通标签候选缓存开关 |
+| `KNOWLEDGE_TAG_CACHE_TTL_SECONDS` | `1800` 秒 |
+| `KNOWLEDGE_REVIEWED_PACKS_ENABLED` | `true`；功能开关，知识包仍须管理员逐包审核 |
 | `RAG_EVAL_ENABLED` | `false` |
 
 例如公共应用地址使用 `MINDHARBOR_PUBLIC_URL`，知识索引重建开关使用 `MINDHARBOR_KNOWLEDGE_REINDEX_ON_START`。环境变量和 Java 配置前缀均以当前配置文件为准，其他参数见配置文件和 `docs/`。
@@ -313,6 +340,9 @@ curl -N -u student:student123 \
 | `POST /api/admin/knowledge/file` | multipart 文件上传，字段名为 `file` |
 | `GET /api/admin/knowledge/review` | 待校对知识块 |
 | `PUT /api/admin/knowledge/review/{id}` | 校对并发布知识块 |
+| `GET /api/admin/knowledge/packs` | 查看知识包范围、来源、审批状态与预览摘要 |
+| `PUT /api/admin/knowledge/packs/{id}/approve` | 管理员提交当前预览的 `digest`，批准对应版本 |
+| `PUT /api/admin/knowledge/packs/{id}/disable` | 禁用知识包直用 |
 
 SSE 包含 `meta`、`start`、`token`、`retry`、`heartbeat`、`done`、`error`、`busy` 等事件。**只有 `done` 或查询到 `SUCCESS` 才表示回复成功**，不能把连接关闭当成成功。
 
@@ -326,6 +356,28 @@ mvn -f services/mcp-tools/pom.xml test
 ```
 
 现有测试覆盖 Agent 路由、SSE、回复恢复、知识检索与校对、网络超时、邮件幂等参数和任务状态等；独立 MCP 集成测试使用本地模拟邮件服务。测试通过不等于真实邮件已投递或模型效果已验证。
+
+### 本次标签与知识包验证
+
+相关的 107 项回归测试通过，覆盖标签同义表达、否定与风险绕过、审批权限、来源变更失效、直用后风险回退和原有 Agent 流程。可单独运行：
+
+```bash
+mvn "-Dtest=ExpandedKnowledgeTagTests,ReviewedKnowledgePackTests,ReviewedKnowledgePackIntegrationTests,KnowledgeTagCacheTests,KnowledgeAgentOptimizationTests,KnowledgeMediaIntegrationTests,SupervisorRouteGuardTests,AgentLoopHarnessTests,CounselorCompactPlanTests" test
+```
+
+PsychQA 合成数据共 2400 条，按情绪类别分层、固定种子分为 **2160 条训练集与 240 条测试集（9:1）**，相同输入交集为 0。本次训练分区用于扩充规则和同义表达，没有训练大模型。数据集不随 GitHub 源码发布，需将自行准备的数据放入 `data/lora/psychqa_synthetic.jsonl` 后执行：
+
+```powershell
+node scripts/split-psychqa-dataset.cjs
+$env:PSYCHQA_EVAL = 'true'
+$env:PSYCHQA_PART = 'train'
+mvn '-Dtest=PsychqaTagEvaluationTests' test
+$env:PSYCHQA_PART = 'test'
+mvn '-Dtest=PsychqaTagEvaluationTests' test
+Remove-Item Env:PSYCHQA_EVAL, Env:PSYCHQA_PART
+```
+
+固定规则在测试分区中让 16/60 条焦虑样本符合免评审条件；正常、低落、高风险各 60 条均未进入直用。这是**规则适用范围的离线评估**，不是知识检索准确率或真实缓存命中率；实际直用还要求知识包审批有效。合成样本存在模板相似性，划分前也检查过原始数据格式及高频短语，不能作为严格盲测结论。报告保存在 `target/psychqa-tags-*-report.json`。
 
 RAG 评测分两步：先由 Java 执行检索与回答生成，导出报告，再由可选 Python 工具调用评审模型计算 RAGAS 指标。默认数据集有 100 条场景样本，不是临床或线上效果证明。
 
@@ -357,6 +409,10 @@ mvn spring-boot:run
 - 已有 Chroma 数据可通过 collection 配置继续使用，或从业务数据库重建；Redis 作为缓存可在切换后从持久化记录恢复。浏览器缓存 key 已更新，切换前应结束正在生成的会话并保存必要的请求 ID。
 - 主应用、独立 MCP 服务、前端和 API 调用方需一起更新工具名、配置变量及请求头。自行准备的模型也需以当前 `Modelfile`、GGUF 文件名和模型标签重新导入。
 
+**已有本机实例的更新方式：**保留 `mindbridge` Compose 项目、原 MySQL 数据库和 Chroma collection，通过私有部署覆盖文件更新主应用与 MCP 镜像；容器仍叫 `mindbridge-*` 不影响运行新版 MindHarbor。不要直接套用面向空环境的启动命令创建另一套数据库。私有覆盖文件、数据库备份与回滚配置应放在 Git 忽略的 `data/deploy/` 中，可能含运行凭据，不能上传。
+
+升级标签与知识包功能会新增 `reviewed_knowledge_packs` 表，无需重新导入全部向量。主应用就绪后检查 `/actuator/health` 和管理员的知识包列表；应能看到 8 个可审核知识包，未批准的包保持草稿。普通标签缓存可直接使用；免评审路径须在管理员审核后才生效。
+
 ### 运行与访问边界
 
 - 演示账号、HTTP Basic、默认数据库密码及基础 Compose 的端口映射用于开发。对外提供服务前，需要替换演示账号机制、配置 HTTPS、限制数据库和管理入口，并检查内置 MCP 服务端的暴露与鉴权。
@@ -375,6 +431,9 @@ mvn spring-boot:run
 
 - [多 Agent 协作](docs/multi-agent-collaboration-copy.md)
 - [RAG 检索与重排](docs/rag-technical-guide.md)
+- [标签候选缓存](docs/knowledge-tag-cache.md)
+- [已审核知识包与风险回退](docs/reviewed-knowledge-packs.md)
+- [PsychQA 标签扩充与 9:1 验证](docs/psychqa-tag-expansion.md)
 - [流式回复与断线恢复](docs/reply-recovery.md)
 - [邮件投递、提醒与确认](docs/mail-workflow.md)
 - [独立 MCP 工具服务](docs/mcp-tools-integration.md)

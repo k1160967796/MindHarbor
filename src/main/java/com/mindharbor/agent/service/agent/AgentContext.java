@@ -30,6 +30,25 @@ public class AgentContext {
     private String memoryBrief = "无相关历史记忆。";
     private String knowledgeQuery;
     private String knowledgeStatus = "coverage=UNKNOWN";
+    private String knowledgePackId;
+    private String knowledgePackRevision;
+    private boolean forceNormalKnowledge;
+
+    public String knowledgePackId() { return knowledgePackId; }
+    public String knowledgePackRevision() { return knowledgePackRevision; }
+    public boolean forceNormalKnowledge() { return forceNormalKnowledge; }
+    public void useKnowledgePack(String id, String revision) {
+        knowledgePackId = id;
+        knowledgePackRevision = revision;
+    }
+    public void revokeKnowledgePack() {
+        knowledgePackId = null;
+        knowledgePackRevision = null;
+        retrievedKnowledge = List.of();
+        knowledgeStatus = "coverage=UNKNOWN; reason=PACK_RISK_REVOKED";
+        forceNormalKnowledge = true;
+        knowledgeHandled = false;
+    }
 
     public String knowledgeStatus() { return knowledgeStatus; }
     public void setKnowledgeStatus(String value) { knowledgeStatus = value; }

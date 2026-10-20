@@ -110,6 +110,11 @@ mindharbor:
     api-key: ${OPENAI_API_KEY:}
     model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
   knowledge:
+    reviewed-packs:
+      enabled: ${KNOWLEDGE_REVIEWED_PACKS_ENABLED:true}
+    tag-cache:
+      enabled: ${KNOWLEDGE_TAG_CACHE_ENABLED:true}
+      ttl-seconds: ${KNOWLEDGE_TAG_CACHE_TTL_SECONDS:1800}
     top-k: ${RAG_TOP_K:4}
     reranker-enabled: ${RAG_RERANKER_ENABLED:true}
     reranker-candidate-limit: ${RAG_RERANKER_CANDIDATE_LIMIT:8}

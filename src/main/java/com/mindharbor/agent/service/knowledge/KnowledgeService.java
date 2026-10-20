@@ -32,6 +32,8 @@ public class KnowledgeService {
     private final ObjectMapper objectMapper;
     private final KnowledgeChunker chunker = new KnowledgeChunker();
     private final Bm25Scorer bm25Scorer = new Bm25Scorer();
+    @org.springframework.beans.factory.annotation.Autowired
+    private KnowledgeTagCache tagCache;
 
     public KnowledgeService(
             KnowledgeChunkRepository knowledgeChunkRepository,
@@ -83,6 +85,7 @@ public class KnowledgeService {
             KnowledgeChunk saved = knowledgeChunkRepository.save(chunk);
             if (!saved.isNeedsReview()) chromaGateway.mirror(saved);
         }
+        if (tagCache != null) tagCache.invalidateAfterCommit();
         return chunks.size();
     }
 
@@ -104,6 +107,7 @@ public class KnowledgeService {
         chunk.setEmbeddingJson(serializeEmbedding(safeEmbedding(chunk.getContent())));
         knowledgeChunkRepository.save(chunk);
         chromaGateway.mirror(chunk);
+        if (tagCache != null) tagCache.invalidateAfterCommit();
     }
 
     @Transactional(readOnly = true)

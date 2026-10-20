@@ -49,8 +49,12 @@ public class RiskGuardianAgent implements MindHarborAgent {
         context.setAssessment(assessment);
         context.setRiskLevel(assessment.risk());
         context.markRiskAssessed();
+        String revokedPack = context.knowledgePackId();
+        boolean revoke = revokedPack != null && assessment.risk() != RiskLevel.LOW;
+        if (revoke) context.revokeKnowledgePack();
         return AgentDecision.continueWith(
                 AgentAction.ASSESS_RISK,
-                "risk=%s, emotion=%s, recentHighRisk=%s".formatted(assessment.risk(), assessment.emotion(), recentHighRisk));
+                "risk=%s, emotion=%s, recentHighRisk=%s; packRevoked=%s; packId=%s"
+                        .formatted(assessment.risk(), assessment.emotion(), recentHighRisk, revoke, revokedPack));
     }
 }

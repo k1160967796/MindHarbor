@@ -1193,6 +1193,7 @@ async function uploadKnowledgeFile(event) {
 
 async function loadKnowledgeReview() {
   if (!state.isAdmin) return;
+  await loadKnowledgePacks();
   try {
     const response = await api("/api/admin/knowledge/review");
     const chunks = await response.json();
@@ -1260,6 +1261,81 @@ async function loadKnowledgeReview() {
   } catch (error) {
     els.knowledgeReviewState.textContent = "读取待校对内容失败：" + error.message;
     setTone(els.knowledgeReviewState, "danger");
+  }
+}
+
+async function loadKnowledgePacks() {
+  if (!state.isAdmin) return;
+  const list = document.querySelector("#knowledgePacksList");
+  const message = document.querySelector("#knowledgePacksState");
+  try {
+    const response = await api("/api/admin/knowledge/packs");
+    const packs = await response.json();
+    list.replaceChildren();
+    message.textContent = "请核对每包的完整内容是否覆盖常见原因、应对建议与限制，再确认启用。来源变化、到期或停用后自动恢复普通检索。";
+    const labels = {DRAFT:"待审核", APPROVED:"已启用", DISABLED:"已停用", EXPIRED:"审核已到期", STALE:"来源变化，需重新审核"};
+    for (const pack of packs) {
+      const card = document.createElement("article");
+      card.className = "knowledge-review-card";
+      const title = document.createElement("h4");
+      title.textContent = `${pack.tag.replaceAll("|", " · ")} — ${labels[pack.status] || pack.status}`;
+      const scope = document.createElement("p");
+      scope.textContent = pack.scope;
+      card.append(title, scope);
+      if (pack.reviewedBy) {
+        const audit = document.createElement("p");
+        audit.textContent = `最近审核：${pack.reviewedBy} · 有效期至 ${formatDate(pack.expiresAt)}`;
+        card.append(audit);
+      }
+      for (const source of pack.sources) {
+        const heading = document.createElement("strong");
+        heading.textContent = `${source.source} · 片段 #${source.id}`;
+        const text = document.createElement("p");
+        text.style.whiteSpace = "pre-wrap";
+        text.textContent = source.content;
+        card.append(heading, text);
+      }
+      if (!pack.sources.length) {
+        const empty = document.createElement("p");
+        empty.textContent = "尚无可用来源，请先导入对应知识资料。";
+        card.append(empty);
+      }
+      const label = document.createElement("label");
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      label.append(check, " 我已核对内容与适用范围，确认可以用于此类常见问题");
+      const approve = document.createElement("button");
+      approve.type = "button"; approve.className = "ghost";
+      approve.textContent = "确认审核并启用 30 天";
+      approve.disabled = true;
+      check.addEventListener("change", () => { approve.disabled = !check.checked || !pack.sources.length; });
+      const disable = document.createElement("button");
+      disable.type = "button"; disable.className = "ghost"; disable.textContent = "停用";
+      disable.disabled = pack.status !== "APPROVED";
+      const error = document.createElement("p");
+      const act = async (action, button) => {
+        button.disabled = true;
+        try {
+          await api(`/api/admin/knowledge/packs/${encodeURIComponent(pack.id)}/${action}`, {
+            method:"PUT", headers:{"Content-Type":"application/json"},
+            body: action === "approve" ? JSON.stringify({digest:pack.digest}) : undefined
+          });
+          await loadKnowledgePacks();
+        } catch (e) {
+          error.textContent = "操作失败：" + e.message;
+          button.disabled = false;
+        }
+      };
+      approve.addEventListener("click", () => act("approve", approve));
+      disable.addEventListener("click", () => act("disable", disable));
+      const actions = document.createElement("div");
+      actions.className = "knowledge-review-actions";
+      actions.append(approve, disable);
+      card.append(label, actions, error);
+      list.append(card);
+    }
+  } catch (error) {
+    message.textContent = "读取知识包失败：" + error.message;
   }
 }
 
@@ -1511,6 +1587,7 @@ els.adminRefresh.addEventListener("click", loadAdminData);
 els.refreshMemory.addEventListener("click", loadUserMemories);
 els.knowledgeUploadForm.addEventListener("submit", uploadKnowledgeFile);
 els.refreshKnowledgeReview.addEventListener("click", loadKnowledgeReview);
+document.querySelector("#refreshKnowledgePacks").addEventListener("click", loadKnowledgePacks);
 els.closeConversation.addEventListener("click", closeConversation);
 els.conversationOverlay.addEventListener("click", (event) => {
   if (event.target === els.conversationOverlay) {

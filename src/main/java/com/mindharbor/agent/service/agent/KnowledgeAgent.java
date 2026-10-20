@@ -20,11 +20,26 @@ public class KnowledgeAgent implements MindHarborAgent {
     private final KnowledgeService knowledgeService;
     private final MindHarborProperties properties;
     private final AiClient aiClient;
+    private final KnowledgeTagCache tagCache;
+    private final ReviewedKnowledgePackService packs;
 
     public KnowledgeAgent(KnowledgeService knowledgeService, MindHarborProperties properties, AiClient aiClient) {
+        this(knowledgeService, properties, aiClient, null);
+    }
+
+    public KnowledgeAgent(KnowledgeService knowledgeService, MindHarborProperties properties, AiClient aiClient,
+                          KnowledgeTagCache tagCache) {
+        this(knowledgeService, properties, aiClient, tagCache, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public KnowledgeAgent(KnowledgeService knowledgeService, MindHarborProperties properties, AiClient aiClient,
+                          KnowledgeTagCache tagCache, ReviewedKnowledgePackService packs) {
         this.knowledgeService = knowledgeService;
         this.properties = properties;
         this.aiClient = aiClient;
+        this.tagCache = tagCache;
+        this.packs = packs;
     }
 
     @Override public AgentName name() { return AgentName.KNOWLEDGE_AGENT; }
@@ -37,10 +52,44 @@ public class KnowledgeAgent implements MindHarborAgent {
         int topK = properties.getKnowledge().getTopK();
         List<String> reasons = new ArrayList<>();
         String query = context.modelInput();
+        KnowledgeTagCache.Plan cachePlan = tagCache == null || context.forceNormalKnowledge() ? null : tagCache.plan(context);
+        String packState = context.forceNormalKnowledge() ? "RISK_REVOKED" : "DISABLED";
+        if (packs != null && tagCache != null && !context.forceNormalKnowledge()) {
+            String rejected = KnowledgePackGate.rejection(context, tagCache, cachePlan);
+            packState = rejected == null ? "MISS" : "BYPASS_" + rejected;
+            if (rejected == null) {
+                var pack = packs.lookup(cachePlan.tag());
+                packState = pack.state();
+                if (pack.hit()) {
+                    // Exact approved texts only: no neighbor expansion, which could
+                    // introduce content the administrator never reviewed.
+                    context.useKnowledgePack(pack.id(), pack.revision());
+                    context.setKnowledgeQuery(query);
+                    context.setRetrievedKnowledge(pack.results());
+                    context.setKnowledgeStatus("coverage=PREAPPROVED_SCOPE; 已审核常见情境资料，未经本次模型充分性评审；仅引用适用内容");
+                    context.markKnowledgeHandled();
+                    return AgentDecision.continueWith(AgentAction.RETRIEVE_KNOWLEDGE,
+                            "pack=APPROVED_PACK; packId=%s; packRevision=%s; tag=%s; review=SKIPPED_APPROVED_PACK; recallCalls=0; reviewCalls=0; elapsedMs=%d"
+                                    .formatted(pack.id(), pack.revision(), cachePlan.tag(), budget.elapsedMs()));
+                }
+            }
+            // Unconfigured/disabled packs retain the existing candidate-cache
+            // path (with review). Invalid or unavailable approved packs force
+            // fresh retrieval instead of reusing a potentially stale pool.
+            if (rejected == null && !"NOT_APPROVED".equals(packState) && !"DISABLED".equals(packState))
+                cachePlan = null;
+        }
         boolean rewritten = needsRewrite(query, context.previousHistory());
         if (rewritten) query = rewrite(context, query, budget, reasons);
         long rewriteMs = budget.elapsedMs();
-        KnowledgeCandidates first = knowledgeService.recall(query, topK, budget);
+        KnowledgeTagCache.Lookup cached = cachePlan == null ? null : tagCache.lookup(cachePlan);
+        long cacheLookupMs = budget.elapsedMs() - rewriteMs;
+        String cacheState = cached == null ? "DISABLED" : cached.state();
+        boolean cacheRoute = cachePlan != null && cachePlan.eligible() && !"ERROR".equals(cacheState);
+        // Canonical public query ensures the cached candidate pool is not personalized.
+        KnowledgeCandidates first = cached != null && cached.hit()
+                ? new KnowledgeCandidates(cached.results(), List.of())
+                : knowledgeService.recall(cacheRoute ? cachePlan.query() : query, topK, budget);
         reasons.addAll(first.degradationReasons());
         long recallMs = budget.elapsedMs() - rewriteMs;
         KnowledgeReview review = knowledgeService.review(context.modelInput(), query, context.memoryBrief(),
@@ -50,8 +99,25 @@ public class KnowledgeAgent implements MindHarborAgent {
         boolean retried = false;
         String retryQuery = review.retryQuery();
         boolean insufficient = review.coverage() == Coverage.NONE || review.coverage() == Coverage.PARTIAL;
+        boolean cacheRejected = cacheRoute && review.coverage() != Coverage.SUFFICIENT;
+        if (cacheRoute && !cacheRejected && !cached.hit()) {
+            if (tagCache.store(cachePlan, first, review)) cacheState += "_STORED";
+        }
+        if (cacheRejected) {
+            if (cached.hit()) tagCache.evict(cachePlan);
+            cacheState += "_REJECTED";
+        }
         long minimum = Math.max(1, properties.getKnowledge().getRetryMinRemainingMs());
-        if (insufficient && budget.remainingMs() >= minimum) {
+        if (cacheRejected && budget.remainingMs() > 0) {
+            // Do not require a different retryQuery: cached coverage may be UNKNOWN
+            // or the reviewer may return no suggested query. Fall back once regardless.
+            retried = true;
+            KnowledgeCandidates fresh = knowledgeService.recall(query, topK, budget);
+            reasons.addAll(fresh.degradationReasons());
+            review = knowledgeService.review(context.modelInput(), query, context.memoryBrief(),
+                    fresh.results(), topK, budget);
+            addReviewReason(review, reasons);
+        } else if (insufficient && budget.remainingMs() >= minimum) {
             // 空召回没有可评审文本；只在未做过改写时尝试一次查询重写。
             if (first.results().isEmpty() && !rewritten) retryQuery = rewrite(context, query, budget, reasons);
             if (isNewQuery(query, retryQuery) && budget.remainingMs() >= minimum) {
@@ -71,19 +137,24 @@ public class KnowledgeAgent implements MindHarborAgent {
                     query = retryQuery;
                 } else reasons.add("RETRY_EMPTY");
             } else reasons.add("RETRY_NOT_STARTED");
-        } else if (insufficient) reasons.add("RETRY_BUDGET_INSUFFICIENT");
+        } else if (insufficient || cacheRejected) reasons.add("RETRY_BUDGET_INSUFFICIENT");
+        // A rejected cached answer must never be treated as sufficient if fallback
+        // cannot run. The coverage/degradation status remains visible downstream.
         List<SearchResult> results = knowledgeService.materialize(review.results(), topK);
         Coverage coverage = results.size() < review.results().size() ? Coverage.UNKNOWN : review.coverage();
         if (results.size() < review.results().size()) reasons.add("SOURCE_CHANGED");
         if (budget.remainingMs() == 0) reasons.add("BUDGET_EXHAUSTED");
         String status = "coverage=" + coverage + "; degraded=" + String.join(",", new LinkedHashSet<>(reasons));
+        String cacheObservation = "cache=" + cacheState + "; cacheTag=" + (cachePlan == null ? "" : cachePlan.tag())
+                + "; pack=" + packState;
         context.setKnowledgeQuery(query);
         context.setRetrievedKnowledge(results);
         context.setKnowledgeStatus(status);
         context.markKnowledgeHandled();
         return AgentDecision.continueWith(AgentAction.RETRIEVE_KNOWLEDGE,
-                "query=%s; retrieved=%d; rewritten=%s; retry=%s; %s; rewriteMs=%d; recallMs=%d; reviewMs=%d; elapsedMs=%d"
-                        .formatted(query, results.size(), rewritten, retried, status, rewriteMs, recallMs, reviewMs, budget.elapsedMs()));
+                "query=%s; retrieved=%d; rewritten=%s; retry=%s; %s; %s; rewriteMs=%d; cacheLookupMs=%d; recallMs=%d; reviewMs=%d; elapsedMs=%d"
+                        .formatted(query, results.size(), rewritten, retried, status, cacheObservation,
+                                rewriteMs, cacheLookupMs, recallMs, reviewMs, budget.elapsedMs()));
     }
 
     public boolean needsRewrite(String input, List<AiMessage> history) {

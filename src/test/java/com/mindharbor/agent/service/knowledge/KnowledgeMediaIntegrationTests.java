@@ -26,9 +26,27 @@ import org.springframework.core.io.ByteArrayResource;
 class KnowledgeMediaIntegrationTests {
     @Autowired KnowledgeService knowledge;
     @Autowired KnowledgeChunkRepository repository;
+    @Autowired KnowledgeTagCache tagCache;
     @Autowired WebTestClient web;
     @MockBean ChromaGateway chroma;
     @MockBean EmbeddingClient embeddings;
+
+    @Test void knowledgeCommitsInvalidateTagCacheButFailedIngestDoesNot() {
+        var context = new com.mindharbor.agent.service.agent.AgentContext(
+                new com.mindharbor.agent.domain.UserAccount(), new com.mindharbor.agent.domain.ChatSession(),
+                "考试焦虑睡不着", "考试焦虑睡不着");
+        context.setIntent(com.mindharbor.agent.domain.IntentType.CONSULT);
+        String initial = tagCache.plan(context).key();
+        knowledge.ingest("tag-cache-invalidation.md", "考试焦虑与睡眠资料");
+        String inserted = tagCache.plan(context).key();
+        assertThat(inserted).isNotEqualTo(initial);
+        Long id = repository.findTop20BySourceOrderByCreatedAtDesc("tag-cache-invalidation.md").get(0).getId();
+        knowledge.approve(id, "更新的考试焦虑与睡眠资料");
+        String approved = tagCache.plan(context).key();
+        assertThat(approved).isNotEqualTo(inserted);
+        assertThatThrownBy(() -> knowledge.ingest("tag-cache-invalidation.md", " ")).isInstanceOf(IllegalArgumentException.class);
+        assertThat(tagCache.plan(context).key()).isEqualTo(approved);
+    }
 
     @Test void reviewGateAppliesToBm25ChromaAndNeighborExpansion() {
         knowledge.ingestBlocks("review.pdf", List.of(

@@ -37,6 +37,14 @@ public final class ChromaRestStore {
         }
     }
 
+    /** Durable background jobs must observe failure so they can retry instead of reporting false success. */
+    public void upsertStrict(String id,String document,Map<String,Object> metadata) {
+        List<Double> vector=embeddings.embed(document);
+        if(vector.isEmpty()) throw new IllegalStateException("Embedding unavailable for memory index");
+        post("/upsert",Map.of("ids",List.of(id),"documents",List.of(document),"metadatas",List.of(metadata),"embeddings",List.of(vector)));
+    }
+    public void deleteStrict(Map<String,Object> filter) {post("/delete",filter);}
+
     public JsonNode query(String text, int topK, Map<String, Object> where) {
         try {
             List<Double> vector = embeddings.embed(text);

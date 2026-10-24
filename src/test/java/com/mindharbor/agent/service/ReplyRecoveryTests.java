@@ -47,8 +47,9 @@ class ReplyRecoveryTests {
 
     @BeforeEach void setup() {
         userId=users.findByUsername("student").orElseThrow().getId();
-        when(runtime.run(any(),any(),anyString(),anyString())).thenReturn(run(false));
+        when(runtime.runRecoverable(any(),anyString())).thenReturn(run(false));
         when(ai.stream(anyList())).thenReturn(Flux.just("完整回答"));
+        when(ai.streamAnswer(anyList(), anyInt())).thenCallRealMethod();
     }
     private AgentRunResult run(boolean risk) {
         return new AgentRunResult(risk?IntentType.RISK:IntentType.CHAT, risk?RiskLevel.HIGH:RiskLevel.LOW,
@@ -72,7 +73,7 @@ class ReplyRecoveryTests {
         assertThat(v.status()).isEqualTo(ReplyStatus.SUCCESS); assertThat(v.attempts()).isEqualTo(2);
         assertThat(v.content()).isEqualTo("完整回答");
         assertThat(events).extracting(ChatStreamEvent::type).contains("retry","done");
-        verify(runtime,times(1)).run(any(),any(),anyString(),anyString());
+        verify(runtime,times(1)).runRecoverable(any(),anyString());
         verify(memory,never()).append(anyString(),eq(MessageRole.ASSISTANT),eq("不完整"));
         verify(memory,times(1)).append(anyString(),eq(MessageRole.ASSISTANT),eq("完整回答"));
         assertThat(messages.findBySession_PublicIdOrderByCreatedAtAsc(v.sessionId())).hasSize(2);
@@ -86,8 +87,58 @@ class ReplyRecoveryTests {
         chat.resume(userId,r.requestId(),1).collectList().block(Duration.ofSeconds(5));
         assertThat(store.status(userId,r.requestId()).generation()).isEqualTo(2);
         assertThat(store.status(userId,r.requestId()).content()).isEqualTo("new full");
-        verify(runtime,times(1)).run(any(),any(),anyString(),anyString());
+        verify(runtime,times(1)).runRecoverable(any(),anyString());
     }
+    @Test void truncatedAnswerContinuesOnceWithoutRepeatingAgentsOrTools() {
+        doReturn(Flux.concat(Flux.just("先做"), Flux.error(new OutputTruncatedException()))).when(ai).streamAnswer(anyList(), eq(1024));
+        doReturn(Flux.just("两次深呼吸。")).when(ai).streamAnswer(anyList(), eq(512));
+        var r=request();
+        var events=chat.streamChat(userId,r).collectList().block(Duration.ofSeconds(5));
+        var status=store.status(userId,r.requestId());
+        assertThat(status.status()).isEqualTo(ReplyStatus.SUCCESS);
+        assertThat(status.content()).isEqualTo("先做两次深呼吸。");
+        assertThat(status.continuationCount()).isEqualTo(1);
+        assertThat(status.attempts()).isEqualTo(1);
+        assertThat(events.stream().filter(e -> "continuation".equals(e.event())).count()).isEqualTo(1);
+        verify(runtime,times(1)).runRecoverable(any(),anyString());
+        verify(ai).streamAnswer(argThat(p -> p.stream().anyMatch(m -> m.role().equals("assistant") && m.content().equals("先做"))),eq(512));
+        verify(memory).append(anyString(),eq(MessageRole.ASSISTANT),eq("先做两次深呼吸。"));
+    }
+
+    @Test void secondTruncationFailsWithoutSavingPartialHistoryOrRetrying() {
+        doReturn(Flux.concat(Flux.just("半段"), Flux.error(new OutputTruncatedException()))).when(ai).streamAnswer(anyList(), anyInt());
+        var r=request(); send(r);
+        var status=store.status(userId,r.requestId());
+        assertThat(status.status()).isEqualTo(ReplyStatus.FAILED);
+        assertThat(status.content()).isEmpty();
+        assertThat(status.error()).contains("完整收尾");
+        assertThat(status.continuationCount()).isEqualTo(1);
+        assertThat(status.attempts()).isEqualTo(1);
+        verify(ai,times(2)).streamAnswer(anyList(),anyInt());
+        verify(memory,never()).append(anyString(),eq(MessageRole.ASSISTANT),anyString());
+    }
+
+    @Test void continuationBudgetSurvivesDisconnectAndResetsOnlyOnManualRegeneration() {
+        var initial=store.attempt(ready());
+        assertThat(store.reserveContinuation(initial)).isTrue();
+        assertThat(store.reserveContinuation(initial)).isFalse();
+        store.interrupt(initial);
+        var resumed=store.attempt(store.resume(userId,initial.view().requestId(),null));
+        assertThat(store.reserveContinuation(resumed)).isFalse();
+        store.failure(resumed,"未完成");
+        var fresh=store.attempt(store.resume(userId,initial.view().requestId(),initial.view().generation()));
+        assertThat(store.reserveContinuation(fresh)).isTrue();
+    }
+
+    @Test void continuationNetworkFailureIsNotRetriedAsAFullAnswer() {
+        doReturn(Flux.concat(Flux.just("半段"), Flux.error(new OutputTruncatedException()))).when(ai).streamAnswer(anyList(),eq(1024));
+        doReturn(Flux.error(new java.io.IOException("offline"))).when(ai).streamAnswer(anyList(),eq(512));
+        var r=request(); send(r);
+        assertThat(store.status(userId,r.requestId()).status()).isEqualTo(ReplyStatus.FAILED);
+        assertThat(store.status(userId,r.requestId()).attempts()).isEqualTo(1);
+        verify(ai,times(2)).streamAnswer(anyList(),anyInt());
+    }
+
     @Test void configurationFailureDoesNotRetry() {
         when(ai.stream(anyList())).thenReturn(Flux.error(new IllegalArgumentException("404 model not found")));
         var r=request(); send(r);
@@ -105,14 +156,14 @@ class ReplyRecoveryTests {
         when(ai.stream(anyList())).thenReturn(Flux.just("resumed"));
         chat.resume(userId,r.requestId(),null).collectList().block(Duration.ofSeconds(5));
         assertThat(store.status(userId,r.requestId()).attempts()).isEqualTo(2);
-        verify(runtime,times(1)).run(any(),any(),anyString(),anyString());
+        verify(runtime,times(1)).runRecoverable(any(),anyString());
         verify(memory,never()).append(anyString(),eq(MessageRole.ASSISTANT),eq("half"));
         verify(ai,times(2)).stream(eq(run(false).responseMessages()));
     }
     @Test void completedReconnectAndDuplicateSubmissionDoNotGenerateAgain() {
         var r=request(); send(r); send(r);
         chat.resume(userId,r.requestId(),null).collectList().block(Duration.ofSeconds(5));
-        verify(ai,times(1)).stream(anyList()); verify(runtime,times(1)).run(any(),any(),anyString(),anyString());
+        verify(ai,times(1)).stream(anyList()); verify(runtime,times(1)).runRecoverable(any(),anyString());
     }
     @Test void requestOwnershipIsChecked() {
         var t=ready(); Long admin=users.findByUsername("admin").orElseThrow().getId();
@@ -150,7 +201,7 @@ class ReplyRecoveryTests {
     }
     @Test void preparationDisconnectStillRegistersReportAndIndependentJobs() throws Exception {
         CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);
-        when(runtime.run(any(),any(),anyString(),anyString())).thenAnswer(i->{ entered.countDown(); release.await(5,TimeUnit.SECONDS); return run(true); });
+        when(runtime.runRecoverable(any(),anyString())).thenAnswer(i->{ entered.countDown(); release.await(5,TimeUnit.SECONDS); return run(true); });
         var r=request(); var subscription=chat.streamChat(userId,r).subscribe();
         assertThat(entered.await(5,TimeUnit.SECONDS)).isTrue(); subscription.dispose();
         for(int i=0;i<100 && store.status(userId,r.requestId()).status()!=ReplyStatus.INTERRUPTED;i++) Thread.sleep(20);

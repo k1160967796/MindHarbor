@@ -38,4 +38,9 @@ public class UserMemoryController {
     ) {
         userProfileMemoryService.deleteMemory(currentUser.getId(), memoryId);
     }
+
+    @GetMapping("/{memoryId}/changes")
+    public List<com.mindharbor.agent.domain.UserMemoryChange> changes(@AuthenticationPrincipal CurrentUser currentUser,@PathVariable Long memoryId) {
+        return userProfileMemoryService.changes(currentUser.getId(),memoryId);
+    }
 }

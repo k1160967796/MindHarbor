@@ -71,6 +71,18 @@ public class AgentContext {
         this.modelInput = modelInput;
     }
 
+    public static AgentContext restore(UserAccount user,ChatSession session,String originalInput,String modelInput,
+            AgentContextSnapshot s,List<AgentStep> steps) {
+        AgentContext c=new AgentContext(user,session,originalInput,modelInput);
+        c.setPreviousHistory(s.previousHistory());c.setModelHistory(s.modelHistory());c.setResponseMessages(s.responseMessages());
+        c.setRetrievedKnowledge(s.retrievedKnowledge());c.memoryBrief=s.memoryBrief();c.knowledgeQuery=s.knowledgeQuery();
+        c.knowledgeStatus=s.knowledgeStatus();c.knowledgePackId=s.knowledgePackId();c.knowledgePackRevision=s.knowledgePackRevision();
+        c.forceNormalKnowledge=s.forceNormalKnowledge();c.responsePlan=s.responsePlan();c.intent=s.intent();c.assessment=s.assessment();
+        c.riskLevel=s.riskLevel();c.responseAgent=s.responseAgent();c.memoryLoaded=s.memoryLoaded();c.intentRouted=s.intentRouted();
+        c.knowledgeHandled=s.knowledgeHandled();c.riskAssessed=s.riskAssessed();c.responsePlanned=s.responsePlanned();c.finished=s.finished();
+        c.steps.addAll(steps);return c;
+    }
+
     public UserAccount user() {
         return user;
     }

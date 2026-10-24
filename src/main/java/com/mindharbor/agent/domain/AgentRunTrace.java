@@ -44,6 +44,12 @@ public class AgentRunTrace {
     @Column(nullable = false, unique = true, length = 64)
     private String traceId;
 
+    @Column(length = 64)
+    private String requestId;
+
+    public String getRequestId() { return requestId; }
+    public void setRequestId(String value) { requestId = value; }
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "session_id")
     private ChatSession session;
@@ -57,7 +63,7 @@ public class AgentRunTrace {
     private ChatMessage triggerMessage;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "LONGTEXT")
     private String input;
 
     @Enumerated(EnumType.STRING)

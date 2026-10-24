@@ -401,7 +401,7 @@ function renderUserMemories(items) {
   }
 
   els.userMemoryState.textContent = `${items.length} 条已保存`;
-  items.slice(0, 8).forEach((item) => {
+  items.forEach((item) => {
     const memory = document.createElement("article");
     memory.className = "memory-item";
 
@@ -424,10 +424,35 @@ function renderUserMemories(items) {
 
     const meta = document.createElement("p");
     meta.className = "memory-meta";
-    meta.textContent = `${Math.round((item.confidence || 0) * 100)}% · ${formatDate(item.lastSeenAt)}`;
+    const statuses = {ACTIVE:"当前有效",HISTORICAL:"历史情况",NEEDS_CONFIRMATION:"待确认",EXPIRED:"已过期，需重新确认",ARCHIVED:"已归档"};
+    const scopes = {GLOBAL:"通用",DAILY:"日常",EXAM:"考试",FAMILY:"家庭",WORK:"工作",RELATIONSHIP:"人际",OTHER:"背景待确认",UNKNOWN:"旧记录，背景未确认"};
+    meta.textContent = `${statuses[item.status] || item.status} · ${scopes[item.scope] || item.scope} · ${formatDate(item.assertedAt || item.lastSeenAt)}${item.expiresAt ? ` · 有效至 ${formatDate(item.expiresAt)}` : ""}`;
 
     top.append(badge, action);
     memory.append(top, summary, meta);
+    const history = document.createElement("details");
+    const historyTitle = document.createElement("summary"); historyTitle.textContent = "查看事实变化";
+    history.append(historyTitle);
+    history.addEventListener("toggle", async () => {
+      if (!history.open || history.dataset.loaded) return;
+      history.dataset.loaded = "true";
+      const body = document.createElement("div"); history.append(body);
+      try {
+        const response = await api(`/api/profile/memory/${encodeURIComponent(item.id)}/changes`);
+        if (!response.ok) throw new Error("读取失败");
+        const changes = await response.json();
+        if (!changes.length) body.textContent = "暂无变更记录（旧版本记录未推断补写）。";
+        const reasons = {CREATED:"首次记录",REPLACED:"已更新旧事实",HISTORICAL_OBSERVATION:"补充过去情况",REVIEW_REQUIRED:"新信息待确认",CAPACITY_ARCHIVE:"归档"};
+        changes.forEach(change => {
+          const before = change.beforeJson ? JSON.parse(change.beforeJson) : null;
+          const after = change.afterJson ? JSON.parse(change.afterJson) : null;
+          const line = document.createElement("p");
+          line.textContent = `${formatDate(change.recordedAt)} · ${reasons[change.reason] || change.reason}：${before?.summary || "无旧事实"} → ${after?.summary || ""}；依据：${after?.evidence || ""}`;
+          body.append(line);
+        });
+      } catch {body.textContent = "变化记录读取失败，请关闭后重试。"; delete history.dataset.loaded;}
+    });
+    memory.append(history);
     if (item.evidence) {
       const evidence = document.createElement("p");
       evidence.className = "memory-evidence";
@@ -925,7 +950,118 @@ function renderTraceCard(trace, compact = false) {
     });
   }
   card.append(steps);
+  if (!compact) {
+    const usage = document.createElement("section");
+    usage.className = "trace-context-block";
+    card.append(usage);
+    if (trace.requestId) {
+      const refresh = document.createElement("button");
+      refresh.type = "button";
+      refresh.className = "ghost";
+      refresh.textContent = "刷新本轮模型调用";
+      const rows = document.createElement("div");
+      usage.append(refresh, rows);
+      refresh.addEventListener("click", () => loadModelCalls(rows, trace.requestId));
+      loadModelCalls(rows, trace.requestId);
+    } else {
+      usage.textContent = "历史轨迹未记录 requestId，无法关联模型用量。";
+    }
+  }
   return card;
+}
+
+async function loadModelCalls(container = document.getElementById("modelCallRows"), requestId = null) {
+  if (!container) return;
+  container.textContent = "正在读取模型调用…";
+  try {
+    const response = await api(`/api/admin/model-calls${requestId ? `?requestId=${encodeURIComponent(requestId)}` : ""}`);
+    if (!response.ok) throw new Error("无法读取模型观测");
+    const report = await response.json();
+    container.replaceChildren();
+    const summary = document.createElement("p");
+    summary.className = "state";
+    summary.textContent = `${report.scope === "REQUEST" ? "本轮请求（含重新生成）" : "最近 100 次调用"}：${report.calls} 次；非成功 ${report.unsuccessfulCalls} 次；已知 Token ${report.knownTotalTokens}（输入 ${report.knownInputTokens} / 输出 ${report.knownOutputTokens}），${report.usageMissingCalls} 次用量未提供；调用耗时累计 ${report.summedCallMs} ms（不是整轮响应时间）`;
+    container.append(summary);
+    const tokens = value => value == null ? "未提供" : String(value);
+    for (const call of report.records) {
+      const row = document.createElement("article");
+      row.className = "trace-context-block";
+      const title = document.createElement("strong");
+      title.textContent = `${call.phase} · ${call.operation} · ${call.outcome}`;
+      const details = document.createElement("p");
+      details.textContent = `${formatDate(call.startedAt)} · ${call.provider} / ${call.model}\n耗时 ${call.durationMs} ms；首片段 ${call.firstTokenMs == null ? "未取得或不适用" : `${call.firstTokenMs} ms`}\n输入 ${tokens(call.inputTokens)} / 输出 ${tokens(call.outputTokens)} / 总计 ${tokens(call.totalTokens)} token；来源 ${call.usageSource === "PROVIDER" ? "服务商返回" : "未提供"}\n请求 ${call.requestId || "未关联（如知识入库）"}；生成轮次 ${call.generation}，尝试 ${call.attempt}${call.errorType ? `；异常类型 ${call.errorType}` : ""}`;
+      details.textContent += `\n结束原因 ${call.finishReason || "未提供"}；截断 ${call.truncated == null ? "未知" : call.truncated ? "是" : "否"}${call.phase === "FINAL_CONTINUATION" ? "；本次为补完收尾调用" : ""}`;
+      details.style.whiteSpace = "pre-wrap";
+      row.append(title, details);
+      container.append(row);
+    }
+    if (!report.records.length) container.append(emptyTable("暂无模型调用记录，功能启用前的数据不会补算。"));
+  } catch (error) {
+    container.textContent = "模型观测读取失败，请稍后刷新。";
+  }
+}
+
+async function loadMemoryTasks() {
+  const container = document.getElementById("memoryTaskRows");
+  if (!container) return;
+  container.textContent = "正在读取记忆任务…";
+  try {
+    const response = await api("/api/admin/memory-tasks");
+    if (!response.ok) throw new Error("读取失败");
+    const tasks = await response.json();
+    container.replaceChildren();
+    const names = { PROFILE: "长期画像", SUMMARY: "会话摘要", INDEX: "记忆索引" };
+    const states = { PENDING: "等待", RUNNING: "执行中", SUCCESS: "完成", SKIPPED: "无需更新", RETRYING: "等待重试", FAILED: "失败" };
+    for (const task of tasks) {
+      const row = document.createElement("article");
+      row.className = "trace-context-block";
+      const title = document.createElement("strong");
+      title.textContent = `#${task.id} · ${names[task.kind] || task.kind} · ${states[task.status] || task.status}`;
+      const detail = document.createElement("p");
+      detail.textContent = `尝试 ${task.attempts}/3 · ${formatDate(task.updatedAt)} · 用户 ${task.userId} · 请求 ${task.requestId || "未关联"}${task.errorType ? ` · ${task.errorType}` : ""}`;
+      if (task.resultNote?.startsWith("RULE_FALLBACK")) detail.textContent += " · 模型抽取失败，本次由明确原文规则兜底";
+      else if (task.resultNote === "MODEL_WITH_RULES") detail.textContent += " · 模型抽取＋原文规则校验";
+      row.append(title, detail);
+      if (task.status === "FAILED") {
+        const retry = document.createElement("button");
+        retry.type = "button"; retry.className = "ghost"; retry.textContent = "重新执行";
+        retry.addEventListener("click", async () => {
+          retry.disabled = true;
+          try {
+            const result = await api(`/api/admin/memory-tasks/${task.id}/retry`, { method: "POST" });
+            if (!result.ok) throw new Error("重试提交失败");
+            await loadMemoryTasks();
+          } catch { retry.textContent = "提交失败，请重试"; retry.disabled = false; }
+        });
+        row.append(retry);
+      }
+      container.append(row);
+    }
+    if (!tasks.length) container.append(emptyTable("暂无记忆维护任务"));
+  } catch { container.textContent = "记忆任务读取失败，请稍后刷新。"; }
+}
+
+async function loadAgentCheckpoints() {
+  const container = document.getElementById("agentCheckpointRows");
+  if (!container) return;
+  container.textContent = "正在读取执行进度…";
+  try {
+    const response = await api("/api/admin/agent-checkpoints");
+    if (!response.ok) throw new Error("读取失败");
+    const rows = await response.json();
+    container.replaceChildren();
+    const labels = {PENDING:"等待执行",RUNNING:"执行中",RETRYING:"等待重试",READY:"准备完成，等待提交",COMMITTED:"已提交准备结果",FAILED:"准备失败"};
+    for (const item of rows) {
+      const row = document.createElement("article"); row.className = "trace-context-block";
+      const title = document.createElement("strong");
+      title.textContent = `${item.requestId} · ${labels[item.status] || item.status}`;
+      const detail = document.createElement("p"); detail.style.whiteSpace = "pre-wrap";
+      detail.textContent = `已完成 ${item.completedSteps}/8 步 · 快照版本 ${item.revision}${item.errorType ? ` · ${item.errorType}` : ""}\n` +
+        item.steps.map(s => `${s.step}. ${s.agent} · ${s.status} · ${s.attempts} 次尝试 · ${s.durationMs} ms${s.errorType ? ` · ${s.errorType}` : ""}`).join("\n");
+      row.append(title, detail); container.append(row);
+    }
+    if (!rows.length) container.append(emptyTable("暂无执行检查点"));
+  } catch { container.textContent = "读取执行进度失败，请稍后刷新。"; }
 }
 
 function renderConversationTraces(traces) {
@@ -1155,6 +1291,9 @@ async function loadAdminData() {
     loadRunTraces()
   ]);
   renderAdminDashboard(reports, excelRecords, alerts, traces);
+  await loadModelCalls();
+  await loadMemoryTasks();
+  await loadAgentCheckpoints();
   await loadKnowledgeReview();
 }
 
@@ -1428,7 +1567,7 @@ async function runReply(pending, assistant, submission = null, regenerate = fals
           if (status.prepared) replyAction(assistant, "重新生成", () => runReply(pending, assistant, null, true));
           terminal = true; break;
         }
-        if ((status.status === "GENERATING" || status.status === "RETRYING") || !status.prepared && status.status !== "FAILED") {
+        if (status.status === "GENERATING" || status.status === "RETRYING") {
           clearReplyText(assistant); replyNotice(assistant, "正在恢复回复，请稍候…");
           await pauseReply(2000); continue;
         }
@@ -1460,6 +1599,9 @@ async function runReply(pending, assistant, submission = null, regenerate = fals
               assistant.querySelector(".reply-progress")?.remove();
               assistant.dataset.raw = `${assistant.dataset.raw || ""}${data.content}`;
               renderAssistantContent(assistant); els.messages.scrollTop = els.messages.scrollHeight;
+            }
+            if (data.type === "continuation") {
+              replyNotice(assistant, data.content || "回答尚未完成，正在补完并收尾…");
             }
             if (data.type === "done") {
               assistant.querySelector(".reply-progress")?.remove();
@@ -1584,6 +1726,9 @@ els.refreshReports.addEventListener("click", () => {
   }
 });
 els.adminRefresh.addEventListener("click", loadAdminData);
+document.getElementById("refreshModelCalls")?.addEventListener("click", () => loadModelCalls());
+document.getElementById("refreshMemoryTasks")?.addEventListener("click", loadMemoryTasks);
+document.getElementById("refreshAgentCheckpoints")?.addEventListener("click", loadAgentCheckpoints);
 els.refreshMemory.addEventListener("click", loadUserMemories);
 els.knowledgeUploadForm.addEventListener("submit", uploadKnowledgeFile);
 els.refreshKnowledgeReview.addEventListener("click", loadKnowledgeReview);

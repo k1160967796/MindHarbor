@@ -20,4 +20,7 @@ public interface AiClient {
     }
 
     Flux<String> stream(List<AiMessage> messages);
+
+    /** Final answer budget; adapters must signal explicit provider truncation. */
+    default Flux<String> streamAnswer(List<AiMessage> messages, int maxTokens) { return stream(messages); }
 }

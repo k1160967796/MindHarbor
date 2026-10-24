@@ -43,7 +43,16 @@ public final class RiskLexicon {
     }
 
     public static boolean hasHighRiskSignal(String text) {
-        return containsAny(text, HIGH_RISK_WORDS);
+        if(text==null)return false;
+        if(containsAny(text, HIGH_RISK_WORDS))return true;
+        String unquoted=text.replaceAll("“[^”]*”|「[^」]*」|\"[^\"]*\"", "");
+        for(String clause:unquoted.split("[，。！？；\\n]")) {
+            if(clause.matches("(?s).*(如果|假如|假设|我朋友|我同学|我室友|角色|小说|剧情|魔术|并没有|不再|不想让|不担心|没有想|不会).*"))continue;
+            if(clause.matches("(?s).*(?:我|自己)[^，。！？；\\n]{0,16}(?:活着太累|活着没意思|活着没有意思).*" )
+                    || clause.matches("(?s).*(?:想|打算|准备)[^，。！？；\\n]{0,12}(?:让自己消失|让自己彻底消失|永远消失).*" )
+                    || clause.matches("(?s).*我[^，。！？；\\n]{0,6}担心自己[^，。！？；\\n]{0,8}做出危险的事.*"))return true;
+        }
+        return false;
     }
 
     public static boolean hasConsultSignal(String text) {

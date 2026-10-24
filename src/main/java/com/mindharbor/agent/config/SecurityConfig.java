@@ -34,6 +34,7 @@ public class SecurityConfig {
                 .authorizeExchange(auth -> auth
                         .pathMatchers(org.springframework.http.HttpMethod.POST,"/api/mail/webhooks/resend").permitAll()
                         .pathMatchers("/actuator/health", "/h2-console/**").permitAll()
+                        .pathMatchers("/actuator/**").hasRole("ADMIN")
                         .pathMatchers("/api/admin/**").hasRole("ADMIN")
                         .pathMatchers("/api/reports/**").hasRole("ADMIN")
                         .pathMatchers("/api/**").authenticated()

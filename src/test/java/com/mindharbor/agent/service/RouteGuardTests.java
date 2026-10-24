@@ -46,6 +46,42 @@ class RouteGuardTests {
     void catchesCurrentDistressDespiteChatClassification(String input) {
         assertThat(guard.validate(IntentType.CHAT, input, List.of()).intent()).isEqualTo(IntentType.CONSULT);
     }
+    @ParameterizedTest
+    @ValueSource(strings={
+            "一个人回宿舍的时候，我总觉得自己比别人差。最近总觉得很空，和朋友聊天也开心不起来，我需要一点支持，但不知道怎么开口。",
+            "我最近开心不起来", "我这几天提不起劲", "我感觉心里空落落的", "我现在没有动力",
+            "准备课堂展示时，和同学沟通时我总怕说错话，整个人很紧绷，身体也会发紧、心跳变快，我需要一点实际的应对办法。"})
+    void everydaySelfDescriptionsAlsoNeedConsultReview(String input) {
+        var result=guard.validate(IntentType.CHAT,input,List.of());
+        assertThat(result.intent()).isEqualTo(IntentType.CONSULT);
+        assertThat(result.reason()).isEqualTo("CURRENT_CONSULT_SIGNAL");
+    }
+    @ParameterizedTest
+    @ValueSource(strings={"翻译“我最近开心不起来”", "如果我开心不起来该怎么写故事", "我朋友最近开心不起来",
+            "我并没有觉得自己比别人差", "我不再觉得自己没有价值", "我需要一点支持来修复数据库", "我觉得缓存很空是什么原因"})
+    void everydayDistressGuardDoesNotTreatQuotedOtherNegatedOrTechnicalTextAsSelfDistress(String input) {
+        assertThat(guard.validate(IntentType.CHAT,input,List.of()).intent()).isEqualTo(IntentType.CHAT);
+    }
+    @Test void indirectSelfDangerCannotTakeGeneralHelpShortcut() {
+        String input="刚才这种想法又出现了，我现在担心自己会做出危险的事。我觉得活着太累了，想找个办法让自己消失，我需要你帮我先稳住当前这一刻。";
+        var ai=org.mockito.Mockito.mock(com.mindharbor.agent.service.ai.AiClient.class);
+        assertThat(new IntentClassifier(ai).classify(input)).isEqualTo(IntentType.RISK);
+        assertThat(guard.validate(IntentType.CHAT,input,List.of()).intent()).isEqualTo(IntentType.RISK);
+        assertThat(guard.validate(IntentType.CHAT,"现在只是作业太多",List.of(AiMessage.user(input))).intent()).isEqualTo(IntentType.CONSULT);
+        org.mockito.Mockito.verifyNoInteractions(ai);
+    }
+    @ParameterizedTest
+    @ValueSource(strings={"翻译“我觉得活着太累了”", "我朋友想让自己消失", "小说角色想让自己消失",
+            "如果我觉得活着太累了，这句话怎么翻译", "我不想让自己消失", "我不再觉得活着太累"})
+    void newDangerPhrasesRespectQuotedOtherHypotheticalAndNegatedContexts(String input) {
+        assertThat(com.mindharbor.agent.service.ai.RiskLexicon.hasHighRiskSignal(input)).isFalse();
+    }
+    @Test void genericHelpWordingMustReachModelInsteadOfBeingAssumedGeneralTask() {
+        var ai=org.mockito.Mockito.mock(com.mindharbor.agent.service.ai.AiClient.class);
+        org.mockito.Mockito.when(ai.complete(org.mockito.ArgumentMatchers.anyList())).thenReturn("CONSULT");
+        assertThat(new IntentClassifier(ai).classify("请帮我稳住当前这一刻")).isEqualTo(IntentType.CONSULT);
+        org.mockito.Mockito.verify(ai).complete(org.mockito.ArgumentMatchers.anyList());
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {"解释一下焦虑的定义", "失眠是什么", "翻译“我最近很焦虑”",

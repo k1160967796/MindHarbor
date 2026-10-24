@@ -8,9 +8,9 @@
 
 | 能力 | 当前实现 |
 | --- | --- |
-| 意图路由 | 区分 `CHAT / CONSULT / RISK`；普通学习、编程和校园事务不必进入心理咨询链路 |
+| 意图路由 | 区分 `CHAT / CONSULT / RISK`；CHAT 放行前进行 RouteGuard 复核，覆盖个人困扰、咨询追问和近期危险表达 |
 | 多 Agent | 记忆读取、主控路由、知识检索、风险守护、陪伴或咨询回复规划；Agent loop 最多 8 步 |
-| 流式回复 | SSE 输出；可重试的生成失败最多 3 次总尝试；支持按请求 ID 查询、恢复和重新生成 |
+| 流式回复 | SSE 输出；可重试的生成失败最多 3 次总尝试；支持按请求 ID 查询、恢复、重新生成及长度截断后的有限续写 |
 | 检索增强 | BM25、可选向量召回、query 改写、候选评审与重排；资源不可用时保留检索降级路径 |
 | 标签候选缓存 | 将背景、情绪、表现及同义表达归一为标签，复用公共候选片段；命中后仍进行相关性评审 |
 | 已审核知识包 | 管理员审核后，在明确适用范围内直接复用知识块，跳过召回与候选评审；仍执行风险评估 |
@@ -19,6 +19,11 @@
 | 邮件跟进 | 支持日志、SMTP 以及独立 MCP/Resend 模式；区分发送受理、投递和辅导员主动确认 |
 | 知识库管理 | 管理员录入文本、上传文件；可选 OCR/视觉解析与图片内容校对、发布 |
 | 管理后台与评测 | 对话记录、报告、工具状态和 Agent 执行轨迹；Java 评测导出及可选 RAGAS 工具 |
+| 模型调用观测 | 按请求及 Agent 关联聊天与 Embedding 调用；记录耗时、流式首片段时间、服务商 Token、失败与重试，管理员查看明细及指标 |
+| 后台记忆维护 | 长期画像和增量摘要通过持久化任务更新；聊天前台复用已完成摘要，保留近期原文；任务租约、重试和版本校验防止旧结果覆盖新状态 |
+| 事实变化管理 | 画像按属性和背景更新；保留变化依据，区分历史、当前、待确认和过期；召回校验有效性，明确表达支持规则兜底 |
+| Agent 检查点恢复 | 每轮请求保存一份上下文快照，逐步骤更新结果；支持步骤超时重试、租约接管及准备阶段恢复 |
+| 本地向量模型预热 | 对同源 Ollama Embedding 接口执行异步预热，并在请求失败后限频触发预热 |
 
 项目名称、Java 包名 `com.mindharbor`、`mindharbor-*` 构建产物、模型标签及 `MINDHARBOR_*` 配置名已统一。已有实例升级前需按下方的迁移说明核对持久化数据与部署配置。
 
@@ -120,10 +125,13 @@ curl -u student:student123 http://localhost:8080/api/agent/status
 ```text
 浏览器 / API
   -> ChatController -> ChatService / ReplyStore
-  -> MemoryAgent -> SupervisorAgent
+  -> AgentRuntimeService / AgentCheckpointStore（逐步骤保存上下文与结果）
+  -> MemoryAgent -> SupervisorAgent / RouteGuard
                      -> KnowledgeAgent / RiskGuardianAgent（按路由执行）
                      -> CompanionAgent 或 CounselorAgent
   -> Spring AI -> Ollama 或 OpenAI 兼容接口 -> SSE
+
+回复准备完成 -> 画像、增量摘要与索引的持久化后台任务
 
 报告落库 -> 持久化任务
            ├─ Excel 归档
@@ -221,7 +229,7 @@ RiskGuardian 判断为中高风险 -> 撤销直用知识包 -> 正常知识检�
 
 新部署不会自动批准知识包。登录管理员页面，打开“常见问题知识包”，核对适用范围和来源内容后再启用。运行轨迹中的 `SKIPPED_APPROVED_PACK` 表示这次跳过了知识评审，**不表示跳过风险评估**。
 
-详细边界见 [标签缓存](docs/knowledge-tag-cache.md)、[知识包审核](docs/reviewed-knowledge-packs.md) 和 [PsychQA 标签扩充与验证](docs/psychqa-tag-expansion.md)。
+详细边界见 [标签缓存](docs/knowledge-tag-cache.md) 和 [知识包审核](docs/reviewed-knowledge-packs.md)。
 
 ## Docker 与扩展功能
 
@@ -311,6 +319,14 @@ Excel 和邮件独立执行；`SUCCESS / ACCEPTED`、`DELIVERED`、辅导员主�
 | `KNOWLEDGE_TAG_CACHE_TTL_SECONDS` | `1800` 秒 |
 | `KNOWLEDGE_REVIEWED_PACKS_ENABLED` | `true`；功能开关，知识包仍须管理员逐包审核 |
 | `RAG_EVAL_ENABLED` | `false` |
+| `CHAT_ANSWER_MAX_TOKENS` / `CHAT_CONTINUATION_MAX_TOKENS` | 最终回答 1024 / 单次续写 512 Token |
+| `AGENT_PREPARATION_SECONDS` / `AGENT_STEP_TIMEOUT_MS` | 准备阶段预算 300 秒 / 单步超时 30000 毫秒 |
+| `AGENT_RETRY_DELAY_MS` / `AGENT_RECOVERY_ENABLED` | 重试基础间隔 500 毫秒 / 自动恢复默认 `true` |
+| `MEMORY_BACKGROUND_ENABLED` / `MEMORY_BACKGROUND_IDLE_MS` | 后台记忆默认 `true` / 前台空闲等待 2000 毫秒 |
+| `MEMORY_SUMMARY_MESSAGE_THRESHOLD` / `MEMORY_SUMMARY_CHAR_THRESHOLD` | 增量摘要阈值 6 条消息 / 3000 字符 |
+| `MEMORY_STATE_VALID_DAYS` / `MEMORY_CONTEXT_VALID_DAYS` | 状态类记忆 14 天 / 其他非稳定背景 90 天 |
+| `AI_OPENAI_STREAM_USAGE` | `true`；请求兼容接口返回流式 Token 用量 |
+| `EMBEDDING_LOCAL_WARMUP_ENABLED` | `true`；同源本地 Embedding 异步预热 |
 
 例如公共应用地址使用 `MINDHARBOR_PUBLIC_URL`，知识索引重建开关使用 `MINDHARBOR_KNOWLEDGE_REINDEX_ON_START`。环境变量和 Java 配置前缀均以当前配置文件为准，其他参数见配置文件和 `docs/`。
 
@@ -334,8 +350,13 @@ curl -N -u student:student123 \
 | `POST /api/chat/replies/{requestId}/resume` | 恢复原请求 |
 | `POST /api/chat/replies/{requestId}/regenerate?generation=N` | 显式重新生成失败回复；`N` 使用状态查询返回的轮次 |
 | `GET /api/profile/memory` | 当前账号画像记忆 |
+| `GET /api/profile/memory/{id}/changes` | 本人记忆的事实变化、来源和版本关系 |
 | `GET /api/admin/reports` | 管理员查看心理报告 |
 | `GET /api/admin/run-traces` | 管理员查看 Agent 轨迹 |
+| `GET /api/admin/model-calls?requestId=...` | 按请求查看模型调用、耗时、Token 和结束状态 |
+| `GET /api/admin/agent-checkpoints` | 查看 Agent 准备阶段检查点与执行进度 |
+| `GET /api/admin/memory-tasks` | 查看画像、摘要、索引后台任务 |
+| `POST /api/admin/memory-tasks/{id}/retry` | 重试失败的后台记忆任务 |
 | `POST /api/admin/knowledge` | JSON 录入知识，字段为 `source`、`content` |
 | `POST /api/admin/knowledge/file` | multipart 文件上传，字段名为 `file` |
 | `GET /api/admin/knowledge/review` | 待校对知识块 |
@@ -346,56 +367,33 @@ curl -N -u student:student123 \
 
 SSE 包含 `meta`、`start`、`token`、`retry`、`heartbeat`、`done`、`error`、`busy` 等事件。**只有 `done` 或查询到 `SUCCESS` 才表示回复成功**，不能把连接关闭当成成功。
 
-生成失败或中断不保存半段助手正文。自动重试复用已准备的提示词，恢复是重新生成整段回答，不是继续拼接旧 token；准备结果未落库时进程崩溃、生成预算耗尽等情况仍可能需要重新提交。完整边界见 [回复恢复说明](docs/reply-recovery.md)。
+生成失败或中断不保存半段助手正文。自动重试复用已准备的提示词，恢复是重新生成整段回答，不是继续拼接旧 token；准备阶段可从已提交的 Agent 检查点恢复；恢复预算耗尽或快照版本不兼容时需要重新提交。完整边界见 [回复恢复说明](docs/reply-recovery.md)。
 
-## 测试与评测
+## 新增功能
 
-```bash
-mvn test
-mvn -f services/mcp-tools/pom.xml test
-```
+### 模型调用观测
 
-现有测试覆盖 Agent 路由、SSE、回复恢复、知识检索与校对、网络超时、邮件幂等参数和任务状态等；独立 MCP 集成测试使用本地模拟邮件服务。测试通过不等于真实邮件已投递或模型效果已验证。
+聊天、内部结构化调用和 Embedding 调用统一关联请求与 Agent 阶段，记录模型名称、调用次数、耗时、首片段时间、输入与输出 Token、重试、结束原因及截断状态。管理员可查看最近调用和单个请求的明细，并通过 Actuator 读取指标。模型未返回的用量显示为“未提供”。
 
-### 本次标签与知识包验证
+### 回答长度与截断续写
 
-相关的 107 项回归测试通过，覆盖标签同义表达、否定与风险绕过、审批权限、来源变更失效、直用后风险回退和原有 Agent 流程。可单独运行：
+最终回答默认目标为 150～250 字，输出上限独立配置为 1024 Token。模型明确因长度上限结束时，支持最多一次、512 Token 的补充续写。续写次数持久化保存；仍不完整的回复保留失败状态，不写入正常会话记忆。
 
-```bash
-mvn "-Dtest=ExpandedKnowledgeTagTests,ReviewedKnowledgePackTests,ReviewedKnowledgePackIntegrationTests,KnowledgeTagCacheTests,KnowledgeAgentOptimizationTests,KnowledgeMediaIntegrationTests,SupervisorRouteGuardTests,AgentLoopHarnessTests,CounselorCompactPlanTests" test
-```
+### 后台记忆与增量摘要
 
-PsychQA 合成数据共 2400 条，按情绪类别分层、固定种子分为 **2160 条训练集与 240 条测试集（9:1）**，相同输入交集为 0。本次训练分区用于扩充规则和同义表达，没有训练大模型。数据集不随 GitHub 源码发布，需将自行准备的数据放入 `data/lora/psychqa_synthetic.jsonl` 后执行：
+长期画像、会话摘要和向量索引通过持久化任务在后台更新，支持执行租约、有限重试和任务状态查询。MemoryAgent 复用已经完成的摘要与近期原文；摘要按新增消息数量或字符阈值增量更新，明显话题冲突时回退到近期原文。管理员可查看后台任务并重试失败任务。
 
-```powershell
-node scripts/split-psychqa-dataset.cjs
-$env:PSYCHQA_EVAL = 'true'
-$env:PSYCHQA_PART = 'train'
-mvn '-Dtest=PsychqaTagEvaluationTests' test
-$env:PSYCHQA_PART = 'test'
-mvn '-Dtest=PsychqaTagEvaluationTests' test
-Remove-Item Env:PSYCHQA_EVAL, Env:PSYCHQA_PART
-```
+### Agent 检查点与步骤恢复
 
-固定规则在测试分区中让 16/60 条焦虑样本符合免评审条件；正常、低落、高风险各 60 条均未进入直用。这是**规则适用范围的离线评估**，不是知识检索准确率或真实缓存命中率；实际直用还要求知识包审批有效。合成样本存在模板相似性，划分前也检查过原始数据格式及高频短语，不能作为严格盲测结论。报告保存在 `target/psychqa-tags-*-report.json`。
+以 requestId 保存一份 AgentContextSnapshot，每个步骤成功后更新同一条快照。快照包含历史、意图、知识片段、风险评估及回复策略；恢复时从已提交状态继续。步骤记录包含执行状态、尝试次数、耗时与错误类型，支持租约接管、单步超时和有限重试。
 
-RAG 评测分两步：先由 Java 执行检索与回答生成，导出报告，再由可选 Python 工具调用评审模型计算 RAGAS 指标。默认数据集有 100 条场景样本，不是临床或线上效果证明。
+### 长期记忆事实管理
 
-Bash 导出示例：
+画像按属性与背景组织，记录来源消息、陈述时间、有效期和版本，区分当前有效、历史、待确认、过期与归档状态。新事实更新同一属性的当前值并保留变化依据；召回过滤失效或旧版本索引，用户可查看事实变化并删除自己的记忆。
 
-```bash
-AI_PROVIDER=ollama \
-OLLAMA_MODEL=qwen2.5:1.5b \
-USE_CHROMA=false \
-MEMORY_USE_CHROMA=false \
-MCP_SERVER_ENABLED=false \
-RAG_EVAL_ENABLED=true \
-RAG_EVAL_EXIT_AFTER_RUN=true \
-DB_URL='jdbc:h2:mem:rag-eval;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1' \
-mvn spring-boot:run
-```
+### 路由保护与本地模型预热
 
-报告默认保存到 `target/rag-eval-report.json`。完整生成会调用模型多次，耗时取决于服务性能；可通过 `RAG_EVAL_DATASET` 指向更小的数据集。Python 安装与评审模型选择见 [评测工具说明](eval/README.md)。不要在没有对应报告时声称已获得某个准确率或 RAGAS 分数。
+普通任务快捷规则限定为具体任务领域；CHAT 候选通过 RouteGuard 检查个人困扰、咨询追问和近期危险表达。咨询与风险分支继续执行 RiskGuardian，路由复核本身不调用额外模型。同源本地 Embedding 支持异步、限频预热。
 
 ## 部署边界与排障
 
@@ -433,8 +431,12 @@ mvn spring-boot:run
 - [RAG 检索与重排](docs/rag-technical-guide.md)
 - [标签候选缓存](docs/knowledge-tag-cache.md)
 - [已审核知识包与风险回退](docs/reviewed-knowledge-packs.md)
-- [PsychQA 标签扩充与 9:1 验证](docs/psychqa-tag-expansion.md)
 - [流式回复与断线恢复](docs/reply-recovery.md)
+- [Agent 检查点与步骤恢复](docs/agent-checkpoint-recovery.md)
+- [长期记忆的事实变化与有效期](docs/memory-facts.md)
+- [后台记忆维护](docs/background-memory.md)
+- [模型调用观测](docs/model-observability.md)
+- [回答长度与截断恢复](docs/answer-completion.md)
 - [邮件投递、提醒与确认](docs/mail-workflow.md)
 - [独立 MCP 工具服务](docs/mcp-tools-integration.md)
 - [图片与扫描文档知识库](docs/image-knowledge-ingestion.md)

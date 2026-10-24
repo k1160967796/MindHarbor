@@ -18,8 +18,9 @@ public class EmbeddingConfig {
     @Bean
     public EmbeddingClient embeddingClient(
             MindHarborProperties properties,
-            WebClient.Builder webClientBuilder
+            WebClient.Builder webClientBuilder,
+            com.mindharbor.agent.service.ai.ModelCallTelemetry telemetry
     ) {
-        return new OpenAiEmbeddingClient(properties, webClientBuilder);
+        return new OpenAiEmbeddingClient(properties, webClientBuilder, telemetry);
     }
 }

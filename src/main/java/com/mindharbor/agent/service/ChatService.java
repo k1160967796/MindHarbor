@@ -19,7 +19,6 @@ import com.mindharbor.agent.service.knowledge.SearchResult;
 import com.mindharbor.agent.service.agent.AgentRunResult;
 import com.mindharbor.agent.service.agent.AgentRuntimeService;
 import com.mindharbor.agent.service.memory.ShortTermMemoryService;
-import com.mindharbor.agent.service.memory.UserProfileMemoryService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -49,7 +48,7 @@ public class ChatService {
     private final ToolOrchestrationService toolOrchestrationService;
     private final PrivacySanitizer privacySanitizer;
     private final ShortTermMemoryService shortTermMemoryService;
-    private final UserProfileMemoryService userProfileMemoryService;
+    private final com.mindharbor.agent.service.memory.MemoryMaintenanceService memoryTasks;
     private final AgentRuntimeService agentRuntimeService;
     private final AgentRunTraceService agentRunTraceService;
     private final AiClient aiClient;
@@ -62,7 +61,7 @@ public class ChatService {
             ToolOrchestrationService toolOrchestrationService,
             PrivacySanitizer privacySanitizer,
             ShortTermMemoryService shortTermMemoryService,
-            UserProfileMemoryService userProfileMemoryService,
+            com.mindharbor.agent.service.memory.MemoryMaintenanceService memoryTasks,
             AgentRuntimeService agentRuntimeService,
             AgentRunTraceService agentRunTraceService,
             AiClient aiClient, ReplyStore replyStore
@@ -73,7 +72,7 @@ public class ChatService {
         this.toolOrchestrationService = toolOrchestrationService;
         this.privacySanitizer = privacySanitizer;
         this.shortTermMemoryService = shortTermMemoryService;
-        this.userProfileMemoryService = userProfileMemoryService;
+        this.memoryTasks = memoryTasks;
         this.agentRuntimeService = agentRuntimeService;
         this.agentRunTraceService = agentRunTraceService;
         this.aiClient = aiClient;
@@ -103,7 +102,7 @@ public class ChatService {
         }
         // cache keeps preparation alive if the browser disconnects, allowing report/task registration.
         Mono<ReplyStore.Ticket> prepared = ticket.prepare()
-                ? Mono.fromCallable(() -> prepare(ticket)).doOnError(ex -> replyStore.failure(ticket, "准备回复失败，请重新提交消息。"))
+                ? Mono.fromCallable(() -> prepare(ticket)).doOnError(ex -> replyStore.preparationFailure(ticket))
                         .subscribeOn(Schedulers.boundedElastic()).cache()
                 : Mono.just(ticket);
         if (ticket.prepare()) prepared.subscribe(ignored -> {},
@@ -111,9 +110,12 @@ public class ChatService {
         Flux<ServerSentEvent<ChatStreamEvent>> main = Flux.just(replyEvent("meta", ticket.view(), ""))
                 .concatWith(prepared.flatMapMany(this::generate))
                 .onErrorResume(ex -> Mono.fromCallable(() -> {
-                    replyStore.failure(ticket, "回复生成失败，请稍后重新生成。");
+                    if(ticket.prepare() && !replyStore.status(ticket.user().getId(),ticket.view().requestId()).prepared())replyStore.preparationFailure(ticket);
+                    else replyStore.failure(ticket, "回复生成失败，请稍后重新生成。");
                     log.warn("Reply {} failed: {}", ticket.view().requestId(), ex.toString());
-                    return replyEvent("error", replyStore.status(ticket.user().getId(), ticket.view().requestId()), "回复生成失败，请稍后重新生成。");
+                    var state=replyStore.status(ticket.user().getId(),ticket.view().requestId());
+                    return replyEvent(state.status()==com.mindharbor.agent.domain.ReplyStatus.INTERRUPTED?"busy":"error",state,
+                            state.error()==null?"准备阶段等待恢复":state.error());
                 }).subscribeOn(Schedulers.boundedElastic()));
         // Heartbeats cause transport failures to surface even while preparation/model work is quiet.
         return Flux.merge(main, Flux.interval(Duration.ofSeconds(5))
@@ -127,9 +129,17 @@ public class ChatService {
     }
 
     private ReplyStore.Ticket prepare(ReplyStore.Ticket ticket) {
+        try (var scope = com.mindharbor.agent.service.ai.ModelCallContext.use(
+                new com.mindharbor.agent.service.ai.ModelCallContext(ticket.view().requestId(),
+                        ticket.view().sessionId(), "PREPARATION", ticket.view().generation(), 0))) {
+            return prepareObserved(ticket);
+        }
+    }
+
+    private ReplyStore.Ticket prepareObserved(ReplyStore.Ticket ticket) {
         UserAccount user = ticket.user(); ChatSession session = ticket.session(); String input = ticket.input();
         Instant startedAt = Instant.now();
-        AgentRunResult run = agentRuntimeService.run(user, session, input, privacySanitizer.sanitize(input));
+        AgentRunResult run = agentRuntimeService.runRecoverable(ticket, privacySanitizer.sanitize(input));
         Instant completedAt = Instant.now();
         RiskLevel risk = run.riskLevel() == null ? RiskLevel.LOW : run.riskLevel();
         List<AiMessage> prompt = run.responseMessages().isEmpty()
@@ -137,6 +147,7 @@ public class ChatService {
         ReplyStore.Ticket ready = replyStore.prepared(ticket, prompt, reply -> {
             ChatMessage message = new ChatMessage(); message.setUser(user); message.setSession(session);
             message.setRole(MessageRole.USER); message.setContent(input); chatMessageRepository.save(message);
+            memoryTasks.enqueue(user.getId(),session.getId(),message.getId(),reply.getId(),ticket.view().requestId(),input);
             agentRunTraceService.saveRun(user, session, message, input, run, startedAt, completedAt);
             if (run.requiresReport()) {
                 var report = saveReport(user, session, input, run.intent(), run.assessment());
@@ -144,8 +155,18 @@ public class ChatService {
             }
         });
         shortTermMemoryService.append(session.getPublicId(), MessageRole.USER, input);
-        rememberUserProfile(user, session, input, run.memoryBrief());
         return ready;
+    }
+
+    /** Recover preparation without generating an unseen answer; the browser resumes SSE later. */
+    public void recoverPreparation(String requestId) {
+        ReplyStore.Ticket ticket=replyStore.resumePreparation(requestId);
+        if(ticket==null || ticket.owner()==null || !ticket.prepare())return;
+        replyStore.interrupt(ticket);
+        try {prepare(ticket);} catch(Exception error) {
+            replyStore.preparationFailure(ticket);
+            log.warn("Agent preparation recovery deferred for {}: {}",requestId,error.getClass().getSimpleName());
+        }
     }
 
     private Flux<ServerSentEvent<ChatStreamEvent>> generate(ReplyStore.Ticket ticket) {
@@ -155,12 +176,8 @@ public class ChatService {
                     StringBuilder text = new StringBuilder();
                     Duration remaining = Duration.between(Instant.now(), attempt.deadline());
                     if (remaining.isNegative() || remaining.isZero()) return Flux.error(new IllegalStateException("Generation deadline exceeded"));
-                    Flux<String> model = Flux.defer(() -> aiClient.stream(attempt.prompt()))
-                            .timeout(Duration.ofSeconds(45))
-                            .takeUntilOther(Mono.delay(remaining).flatMap(n -> Mono.error(new java.util.concurrent.TimeoutException("Generation deadline exceeded"))))
-                            .switchIfEmpty(Flux.error(new IllegalStateException("Empty model response")));
-                    Flux<ServerSentEvent<ChatStreamEvent>> body = model.doOnNext(text::append)
-                            .map(token -> replyEvent("token", attempt.view(), token));
+                    Flux<ServerSentEvent<ChatStreamEvent>> body = answerPart(attempt, attempt.prompt(), text, false)
+                            .takeUntilOther(Mono.delay(remaining).flatMap(n -> Mono.error(new java.util.concurrent.TimeoutException("Generation deadline exceeded"))));
                     return Flux.just(replyEvent(attempt.view().attempts() == 1 ? "start" : "retry", attempt.view(),
                                     "模型响应超时或失败，正在重试"))
                             .concatWith(body)
@@ -177,16 +194,49 @@ public class ChatService {
                                             .concatWith(Mono.delay(Duration.ofSeconds(attempt.view().attempts())).thenMany(generate(attempt)));
                                 }
                                 return Mono.fromCallable(() -> {
-                                    replyStore.failure(attempt, "回复失败，请检查模型服务后点击重新生成。");
+                                    String reason = ex instanceof IncompleteReplyException
+                                            ? "回答未能完整收尾，请点击重新生成。"
+                                            : "回复失败，请检查模型服务后点击重新生成。";
+                                    replyStore.failure(attempt, reason);
                                     return replyEvent("error", replyStore.status(attempt.user().getId(), attempt.view().requestId()),
-                                            "回复失败，请检查模型服务后点击重新生成。");
+                                            reason);
                                 }).subscribeOn(Schedulers.boundedElastic());
                             });
                 });
     }
 
+    private Flux<ServerSentEvent<ChatStreamEvent>> answerPart(ReplyStore.Ticket attempt,
+            List<AiMessage> prompt, StringBuilder text, boolean continuation) {
+        int maxTokens = continuation ? properties.getChat().getContinuationMaxTokens() : properties.getChat().getAnswerMaxTokens();
+        Flux<ServerSentEvent<ChatStreamEvent>> part = Flux.defer(() -> aiClient.streamAnswer(prompt, maxTokens))
+                .contextWrite(ctx -> ctx.put(com.mindharbor.agent.service.ai.ModelCallContext.KEY,
+                        new com.mindharbor.agent.service.ai.ModelCallContext(attempt.view().requestId(),
+                                attempt.view().sessionId(), continuation ? "FINAL_CONTINUATION" : "FINAL_RESPONSE",
+                                attempt.view().generation(), attempt.view().attempts())))
+                .timeout(Duration.ofSeconds(45))
+                .switchIfEmpty(Flux.error(new IllegalStateException("Empty model response")))
+                .doOnNext(text::append)
+                .map(token -> replyEvent("token", attempt.view(), token));
+        if (continuation) return part.onErrorMap(ex -> new IncompleteReplyException(ex));
+        return part.onErrorResume(com.mindharbor.agent.service.ai.OutputTruncatedException.class, ex ->
+                Mono.fromCallable(() -> replyStore.reserveContinuation(attempt)).subscribeOn(Schedulers.boundedElastic())
+                        .flatMapMany(allowed -> {
+                            if (!allowed) return Flux.error(new IncompleteReplyException(ex));
+                            var next = new ArrayList<>(prompt);
+                            next.add(AiMessage.assistant(text.toString()));
+                            next.add(AiMessage.system("保留原有安全规则。上一条助手回答因长度限制中断。只接着补完未完成的句子或建议，并用一两句简短收尾。不要重复已有文字，不要新增建议、话题或标题，不要重新开始回答。"));
+                            return Flux.just(replyEvent("continuation", attempt.view(), "回答尚未完成，正在补完并收尾…"))
+                                    .concatWith(answerPart(attempt, next, text, true));
+                        }));
+    }
+
+    private static final class IncompleteReplyException extends RuntimeException {
+        private IncompleteReplyException(Throwable cause) { super("Incomplete answer after bounded continuation", cause); }
+    }
+
     static boolean retryable(Throwable error) {
         for (Throwable e = error; e != null; e = e.getCause()) {
+            if (e instanceof IncompleteReplyException) return false;
             if (e instanceof org.springframework.web.reactive.function.client.WebClientResponseException web) {
                 int code = web.getStatusCode().value();
                 return code == 408 || code == 429 || code >= 500;
@@ -200,14 +250,6 @@ public class ChatService {
     private ServerSentEvent<ChatStreamEvent> replyEvent(String type, ReplyStore.View view, String content) {
         return event(type, new ChatStreamEvent(type, view.sessionId(), content, null, null,
                 view.requestId(), view.replyId(), view.status().name(), view.attempts(), view.generation(), view.prepared()));
-    }
-
-    private void rememberUserProfile(UserAccount user, ChatSession session, String input, String memoryBrief) {
-        try {
-            userProfileMemoryService.rememberUserInput(user, session, input, memoryBrief);
-        } catch (Exception exception) {
-            log.debug("User profile memory update skipped: {}", exception.getMessage());
-        }
     }
 
     private PsychologicalReport saveReport(

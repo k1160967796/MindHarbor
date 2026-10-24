@@ -21,23 +21,42 @@ public class SpringAiChatClient implements AiClient {
 
     private final ChatModel chatModel;
     private final StreamingChatModel streamingChatModel;
+    private final ModelCallTelemetry telemetry;
+    private final String provider;
+    private final String model;
 
     public SpringAiChatClient(ChatModel chatModel, StreamingChatModel streamingChatModel) {
+        this(chatModel, streamingChatModel, null, "unknown", "unknown");
+    }
+
+    public SpringAiChatClient(ChatModel chatModel, StreamingChatModel streamingChatModel,
+                              ModelCallTelemetry telemetry, String provider, String model) {
         this.chatModel = chatModel;
         this.streamingChatModel = streamingChatModel;
+        this.telemetry = telemetry; this.provider = provider; this.model = model;
     }
 
     @Override
     public String complete(List<AiMessage> messages) {
-        ChatResponse response = chatModel.call(new Prompt(toSpringMessages(messages)));
-        return extractText(response);
+        var call = start(ModelCallContext.current(), "CHAT_SYNC");
+        try {
+            ChatResponse response = chatModel.call(new Prompt(toSpringMessages(messages)));
+            if (call != null) { call.response(response, false); call.success(); }
+            return extractText(response);
+        } catch (RuntimeException ex) { if (call != null) call.error(ex); throw ex; }
     }
 
     @Override
     public Flux<String> stream(List<AiMessage> messages) {
-        return streamingChatModel.stream(new Prompt(toSpringMessages(messages)))
-                .map(this::extractText)
-                .filter(token -> !token.isBlank());
+        return observedStream(new Prompt(toSpringMessages(messages)), "CHAT_STREAM");
+    }
+
+    @Override
+    public Flux<String> streamAnswer(List<AiMessage> messages, int maxTokens) {
+        org.springframework.ai.chat.prompt.ChatOptions options = chatModel instanceof org.springframework.ai.ollama.OllamaChatModel
+                ? org.springframework.ai.ollama.api.OllamaOptions.builder().numPredict(maxTokens).build()
+                : org.springframework.ai.chat.prompt.ChatOptions.builder().maxTokens(maxTokens).build();
+        return observedStream(new Prompt(toSpringMessages(messages), options), "CHAT_STREAM", true);
     }
 
     @Override
@@ -53,11 +72,55 @@ public class SpringAiChatClient implements AiClient {
             options = org.springframework.ai.chat.prompt.ChatOptions.builder()
                     .temperature(0.0).maxTokens(maxTokens).build();
         }
-        // 聚合流式响应得到内部结构化结果；block 的总超时会取消 WebClient 上游请求。
-        return streamingChatModel.stream(new Prompt(toSpringMessages(messages), options))
-                .map(this::extractText)
-                .reduce(new StringBuilder(), StringBuilder::append)
-                .map(StringBuilder::toString).block(timeout);
+        var call = start(ModelCallContext.current(), "CHAT_INTERNAL");
+        var finish = new java.util.concurrent.atomic.AtomicReference<String>();
+        try {
+            String answer = Flux.defer(() -> streamingChatModel.stream(new Prompt(toSpringMessages(messages), options)))
+                    .doOnNext(response -> {
+                        String reason=ModelFinishReason.from(response);
+                        if(reason!=null)finish.set(reason);
+                        if (call != null) call.response(response, true);
+                    })
+                    .map(this::extractText).reduce(new StringBuilder(), StringBuilder::append)
+                    .map(StringBuilder::toString).block(timeout);
+            if (call != null) call.success();
+            if(ModelFinishReason.truncated(finish.get()))throw new OutputTruncatedException();
+            return answer;
+        } catch (RuntimeException ex) {
+            if (call != null) call.error(ex);
+            throw ex;
+        }
+    }
+
+    private ModelCallTelemetry.Call start(ModelCallContext context, String operation) {
+        return telemetry == null ? null : telemetry.start(context, provider, model, operation);
+    }
+
+    private Flux<String> observedStream(Prompt prompt, String operation) {
+        return observedStream(prompt, operation, false);
+    }
+
+    private Flux<String> observedStream(Prompt prompt, String operation, boolean checkFinish) {
+        // Capture sync Agent scope at assembly; Reactor Context takes precedence for final/retried replies.
+        ModelCallContext captured = ModelCallContext.current();
+        return Flux.deferContextual(context -> {
+            var call = start(context.getOrDefault(ModelCallContext.KEY, captured), operation);
+            var finish = new java.util.concurrent.atomic.AtomicReference<String>();
+            Flux<ChatResponse> responses = Flux.defer(() -> streamingChatModel.stream(prompt));
+            return responses.doOnNext(response -> {
+                        String reason = ModelFinishReason.from(response);
+                        if (reason != null) finish.set(reason);
+                        if (call != null) call.response(response, true);
+                    })
+                    .doOnComplete(() -> { if (call != null) call.success(); })
+                    .doOnError(error -> { if (call != null) call.error(error); })
+                    .doFinally(signal -> {
+                        if (call != null && signal == reactor.core.publisher.SignalType.CANCEL) call.finish("CANCELLED", null);
+                    })
+                    .map(this::extractText).filter(token -> !token.isEmpty())
+                    .concatWith(Flux.defer(() -> checkFinish && ModelFinishReason.truncated(finish.get())
+                            ? Flux.error(new OutputTruncatedException()) : Flux.empty()));
+        });
     }
 
     private List<Message> toSpringMessages(List<AiMessage> messages) {

@@ -237,6 +237,30 @@
               </div>
               <div id="traceRows" class="admin-table"></div>
             </section>
+            <section class="admin-section" aria-label="模型调用观测">
+              <div class="admin-section-head">
+                <h3>模型调用观测</h3>
+                <button id="refreshModelCalls" type="button" class="ghost">刷新模型用量</button>
+              </div>
+              <p class="state">最近 100 次调用，含重试；异步入库后可刷新。Token 未返回时显示“未提供”，不视为零。未配置计价，不显示费用。</p>
+              <div id="modelCallRows" class="admin-table"></div>
+            </section>
+            <section class="admin-section" aria-label="后台记忆维护">
+              <div class="admin-section-head">
+                <h3>后台记忆维护</h3>
+                <button id="refreshMemoryTasks" type="button" class="ghost">刷新任务</button>
+              </div>
+              <p class="state">画像和摘要在聊天空闲时更新；失败自动重试，达到上限后可手动重试。此处不展示对话原文。</p>
+              <div id="memoryTaskRows" class="admin-table"></div>
+            </section>
+            <section class="admin-section" aria-label="Agent 执行恢复">
+              <div class="admin-section-head">
+                <h3>Agent 执行恢复</h3>
+                <button id="refreshAgentCheckpoints" type="button" class="ghost">刷新进度</button>
+              </div>
+              <p class="state">每轮仅保留一份最新上下文快照；此处展示精简步骤，不展示私密上下文。中断后自动从已保存进度恢复。</p>
+              <div id="agentCheckpointRows" class="admin-table"></div>
+            </section>
           </div>
         </section>
 

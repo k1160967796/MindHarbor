@@ -35,7 +35,15 @@ public class UserMemoryChromaGateway {
         if (!properties.getMemory().isUseChroma() || item.getId() == null) {
             return;
         }
-        store.upsert(chromaId(item.getId()), document(item), metadata(item));
+        if(!item.currentAt(java.time.Instant.now())) {
+            store.deleteStrict(Map.of("where",Map.of("$and",List.of(Map.of("memoryId",String.valueOf(item.getId())),
+                    Map.of("sourceOrder",Map.of("$lte",item.getSourceOrder()))))));
+            return;
+        }
+        store.upsertStrict(chromaId(item.getId())+"-r"+item.getSourceOrder(), document(item), metadata(item));
+        // Never delete a newer index if this worker returns late after losing its lease.
+        store.deleteStrict(Map.of("where",Map.of("$and",List.of(Map.of("memoryId",String.valueOf(item.getId())),
+                Map.of("sourceOrder",Map.of("$lt",item.getSourceOrder()))))));
     }
 
     public List<UserMemoryMatch> query(Long userId, String text, int topK) {
@@ -47,7 +55,7 @@ public class UserMemoryChromaGateway {
 
     public void delete(Long memoryId) {
         if (!properties.getMemory().isUseChroma() || memoryId == null) return;
-        store.delete(Map.of("ids", List.of(chromaId(memoryId))));
+        store.deleteStrict(Map.of("where", Map.of("memoryId",String.valueOf(memoryId))));
     }
 
     private List<UserMemoryMatch> parseMatches(JsonNode response) {
@@ -61,7 +69,7 @@ public class UserMemoryChromaGateway {
             Long memoryId = parseLong(metadatas.path(i).path("memoryId").asText());
             if (memoryId != null) {
                 double score = 1.0 - distances.path(i).asDouble(1.0);
-                matches.add(new UserMemoryMatch(memoryId, score));
+                matches.add(new UserMemoryMatch(memoryId, score,metadatas.path(i).path("sourceOrder").asLong(0)));
             }
         }
         return matches;
@@ -70,8 +78,11 @@ public class UserMemoryChromaGateway {
     private Map<String, Object> metadata(UserMemoryItem item) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("memoryId", String.valueOf(item.getId()));
+        metadata.put("sourceOrder",item.getSourceOrder());
         metadata.put("userId", String.valueOf(item.getUser().getId()));
         metadata.put("type", item.getType().name());
+        metadata.put("scope",item.getFactScope());
+        metadata.put("factKey",item.getFactKey()==null?"legacy":item.getFactKey());
         ChatSession session = item.getSourceSession();
         if (session != null && session.getPublicId() != null) {
             metadata.put("sourceSessionId", session.getPublicId());
@@ -83,7 +94,7 @@ public class UserMemoryChromaGateway {
         String evidence = item.getEvidence() == null || item.getEvidence().isBlank()
                 ? ""
                 : "\n证据：" + item.getEvidence();
-        return "%s：%s%s".formatted(item.getType().name(), item.getSummary(), evidence);
+        return "%s/%s：%s%s".formatted(item.getType().name(),item.getFactScope(),item.getSummary(), evidence);
     }
 
     private String chromaId(Long memoryId) {
@@ -98,6 +109,6 @@ public class UserMemoryChromaGateway {
         }
     }
 
-    public record UserMemoryMatch(Long memoryId, double score) {
+    public record UserMemoryMatch(Long memoryId, double score,long sourceOrder) {
     }
 }

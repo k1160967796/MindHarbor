@@ -44,6 +44,7 @@ public class AgentRunTraceService {
             Instant completedAt
     ) {
         AgentRunTrace trace = new AgentRunTrace();
+        trace.setRequestId(com.mindharbor.agent.service.ai.ModelCallContext.current().requestId());
         trace.setTraceId(UUID.randomUUID().toString().replace("-", ""));
         trace.setUser(user);
         trace.setSession(session);

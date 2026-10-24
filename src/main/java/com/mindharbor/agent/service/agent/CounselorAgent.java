@@ -142,12 +142,13 @@ public class CounselorAgent implements MindHarborAgent {
                 KnowledgeAgent 检索 query：
                 %s
 
-                内部回复提纲（不是已完成的回答；不要逐字复述字段标题。风险要求优先于行动建议，结合完整知识和历史自然展开）：
+                内部回复提纲（不是已完成的回答；不要逐字复述字段标题。风险要求优先于行动建议，只选择最相关内容简短回应）：
                 %s
                 """.formatted(context.memoryBrief(), context.knowledgeQuery(), plan)));
         messages.add(AiMessage.system("知识资料状态：" + context.knowledgeStatus()
                 + "。PARTIAL/NONE/UNKNOWN 时不得声称资料完整；仅引用实际提供且相关的内容，不能编造机构流程或依据。"
                 + "风险评估仍独立有效，资料不足不降低安全回应要求。"));
+        messages.add(PromptTemplates.answerLengthRule());
         messages.addAll(context.modelHistory());
         return messages;
     }

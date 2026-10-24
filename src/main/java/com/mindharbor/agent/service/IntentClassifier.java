@@ -19,8 +19,7 @@ public class IntentClassifier {
 
     private static final List<String> GENERAL_TASK_WORDS = List.of(
             "java", "python", "javascript", "代码", "编程", "程序", "算法", "数据库", "spring", "maven",
-            "前端", "后端", "项目", "接口", "bug", "报错", "作业", "论文", "翻译", "总结", "解释",
-            "怎么写", "如何", "是什么", "为什么", "给我", "帮我", "推荐", "查询", "天气", "路线"
+            "前端", "后端", "项目", "接口", "bug", "报错", "作业", "论文", "天气", "路线"
     );
 
     private final AiClient aiClient;
@@ -39,7 +38,8 @@ public class IntentClassifier {
         if (RiskLexicon.hasHighRiskSignal(normalized)) {
             return IntentType.RISK;
         }
-        // 学习、编程、作业等明确普通任务直接走 CHAT，避免误触发后台评估。
+        // Only concrete task domains justify this shortcut. Generic verbs such as 帮我/如何
+        // also occur in urgent help requests and must reach the classifier/guard.
         if (isClearlyGeneralTask(normalized)) {
             return IntentType.CHAT;
         }

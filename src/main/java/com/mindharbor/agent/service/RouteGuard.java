@@ -30,6 +30,8 @@ public class RouteGuard {
                     + "(?:焦虑|难受|失眠|睡不着|害怕|恐慌|孤独|低落|抑郁|崩溃|心慌|痛苦|想哭|撑不住|压力很大|压力太大)"
                     + "|\\b(?:i am|i'm|i feel|i have been)\\s+(?:(?:so|very|really)\\s+)?(?:anxious|depressed|sad|lonely|stressed)\\b");
     private static final Pattern QUOTED_TEXT = Pattern.compile("“[^”]*”|「[^」]*」|\"[^\"]*\"");
+    private static final Pattern EVERYDAY_PERSONAL_DISTRESS = Pattern.compile(
+            "(?:我|自己)[^，。！？；\\n]{0,24}(?:开心不起来|高兴不起来|提不起劲|提不起精神|提不起兴趣|没有动力|没动力|比别人差|没有价值|很空|空落落|怕说错话|怕做不好|很紧绷|心跳变快)");
     private static final Pattern FOLLOW_UP = Pattern.compile(
             "^(?:(?:那|那么|所以|可是|但是|还是|现在|然后)[，, ]*)?(?:我)?(?:该|应该|要)?(?:怎么办|怎么做|怎么解决|如何解决|如何缓解|如何改善)(?:这个问题|这种情况)?[呢啊吗？?。!！ ]*$"
                     + "|^(?:还是这样|还是不行|还是没用|比昨天更严重了|比之前更严重了|你刚才说的方法没用|试过了没用|然后呢)[呢啊？?。!！ ]*$"
@@ -60,11 +62,19 @@ public class RouteGuard {
     }
 
     private boolean hasConsultEvidence(String input) {
+        String unquoted = QUOTED_TEXT.matcher(input).replaceAll("");
+        // Everyday descriptions of distress may have no clinical/lexicon word such as 抑郁.
+        // Evaluate clauses so a quote, a hypothetical or somebody else's state is not self evidence.
+        for(String clause:unquoted.split("[，。！？；\\n]")) {
+            if(EVERYDAY_PERSONAL_DISTRESS.matcher(clause).find()
+                    && !containsAny(clause,GENERAL_REQUEST)
+                    && !clause.matches("(?s).*(如果|假如|假设|要是|我朋友|我室友|我同学|他说|她说|并没有|不是|不再|没有觉得|没有感觉|不觉得|不感觉).*"))
+                return true;
+        }
         if (!RiskLexicon.hasConsultSignal(input) && !containsAny(input, DISTRESS)) {
             return false;
         }
         // 普通知识问答本身不是个人困扰；同一句中明确表达自身困扰仍应复核。
-        String unquoted = QUOTED_TEXT.matcher(input).replaceAll("");
         return PERSONAL_DISTRESS.matcher(unquoted).find() || !containsAny(input, GENERAL_REQUEST);
     }
 

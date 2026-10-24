@@ -27,20 +27,26 @@ public class ReplyStore {
     private final EntityManager em;
     private final TransactionTemplate tx;
     private final ObjectMapper json;
+    private final com.mindharbor.agent.service.memory.MemoryMaintenanceService memoryTasks;
+    private final com.mindharbor.agent.service.agent.AgentCheckpointStore checkpoints;
 
     public ReplyStore(ChatMessageRepository messages, ChatSessionRepository sessions,
-                      EntityManager em, TransactionTemplate tx, ObjectMapper json) {
-        this.messages = messages; this.sessions = sessions; this.em = em; this.tx = tx; this.json = json;
+                      EntityManager em, TransactionTemplate tx, ObjectMapper json,
+                      com.mindharbor.agent.service.memory.MemoryMaintenanceService memoryTasks,
+                      com.mindharbor.agent.service.agent.AgentCheckpointStore checkpoints) {
+        this.messages = messages; this.sessions = sessions; this.em = em; this.tx = tx; this.json = json;this.memoryTasks=memoryTasks;
+        this.checkpoints=checkpoints;
     }
 
     public record View(String requestId, Long replyId, String sessionId, ReplyStatus status,
-                       int attempts, int generation, String content, String error, boolean prepared) {}
+                       int attempts, int generation, String content, String error, boolean prepared, int continuationCount) {}
     public record Ticket(View view, String owner, UserAccount user, ChatSession session, String input,
                          List<AiMessage> prompt, Instant deadline, boolean prepare) {}
 
     public Ticket open(Long userId, ChatRequest request) {
         String id = request.requestId() == null ? UUID.randomUUID().toString() : request.requestId();
         return tx.execute(s -> {
+            memoryTasks.touchForeground();
             // Serialize idempotency-key creation for this user, including first-session creation.
             UserAccount user = em.find(UserAccount.class, userId, LockModeType.PESSIMISTIC_WRITE);
             if (user == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
@@ -66,6 +72,7 @@ public class ReplyStore {
             m.setRequestInput(request.message().trim()); m.setReplyStatus(ReplyStatus.GENERATING);
             m.setExecutionOwner(UUID.randomUUID().toString()); m.setLeaseUntil(Instant.now().plusSeconds(180));
             messages.saveAndFlush(m);
+            checkpoints.initialize(m);
             return ticket(m, m.getExecutionOwner(), true);
         });
     }
@@ -76,11 +83,13 @@ public class ReplyStore {
 
     public Ticket resume(Long userId, String id, Integer expectedGeneration) {
         return tx.execute(s -> {
+            memoryTasks.touchForeground();
             var m = get(id, userId); expire(m);
             // Manual regeneration uses a generation CAS so duplicate button clicks cannot reset attempts.
             if (expectedGeneration != null && m.getReplyStatus() == ReplyStatus.FAILED
                     && m.getPromptJson() != null && m.getGeneration() == expectedGeneration) {
                 m.setAttempts(0); m.setGeneration(m.getGeneration() + 1);
+                m.setContinuationCount(0);
                 m.setGenerationDeadline(null); m.setReplyStatus(ReplyStatus.INTERRUPTED); m.setReplyError(null);
                 m.setRemainingMillis(GENERATION_SECONDS * 1000L);
             }
@@ -90,8 +99,15 @@ public class ReplyStore {
 
     private Ticket claim(ChatMessage m) {
         expire(m);
-        if (m.getReplyStatus() != ReplyStatus.INTERRUPTED || m.getPromptJson() == null)
+        if (m.getReplyStatus() != ReplyStatus.INTERRUPTED || m.getExecutionOwner()!=null)
             return ticket(m, null, false);
+        if(m.getPromptJson()==null) {
+            String problem=checkpoints.recoveryProblem(m);
+            if(problem!=null){fail(m,problem);return ticket(m,null,false);}
+            m.setExecutionOwner(UUID.randomUUID().toString());m.setReplyStatus(ReplyStatus.RETRYING);m.setReplyError(null);
+            m.setLeaseUntil(Instant.now().plusSeconds(180));
+            return ticket(m,m.getExecutionOwner(),true);
+        }
         if (m.getAttempts() >= MAX_ATTEMPTS) { fail(m, "已达到三次尝试上限"); return ticket(m, null, false); }
         // A disconnected client can come back later; only the remaining generation budget is reused.
         if (m.getRemainingMillis() <= 0) {
@@ -106,11 +122,13 @@ public class ReplyStore {
         return tx.execute(s -> {
             var m = get(ticket.view().requestId(), ticket.user().getId());
             // Cancellation during preparation leaves the owner in place until preparation commits.
-            if (!Objects.equals(ticket.owner(), m.getExecutionOwner()) || m.getPromptJson() != null)
+            if (!Objects.equals(ticket.owner(), m.getExecutionOwner()) || m.getPromptJson() != null
+                    || m.getLeaseUntil()==null || !m.getLeaseUntil().isAfter(Instant.now()))
                 throw new IllegalStateException("Preparation lease lost");
             persistRelated.accept(m);
             try { m.setPromptJson(json.writeValueAsString(prompt)); }
             catch (Exception ex) { throw new IllegalStateException(ex); }
+            checkpoints.committed(m);
             m.setLeaseUntil(Instant.now().plusSeconds(GENERATION_SECONDS + 10));
             if (m.getReplyStatus() == ReplyStatus.INTERRUPTED) { m.setExecutionOwner(null); m.setLeaseUntil(null); }
             return ticket(m, m.getExecutionOwner(), false);
@@ -130,8 +148,19 @@ public class ReplyStore {
         });
     }
 
+    /** Persist the one-continuation budget across retry/disconnect; reset only on explicit regeneration. */
+    public boolean reserveContinuation(Ticket t) {
+        return Boolean.TRUE.equals(tx.execute(s -> {
+            var m = owned(t);
+            if (m.getContinuationCount() >= 1) return false;
+            m.setContinuationCount(1);
+            return true;
+        }));
+    }
+
     public boolean success(Ticket t, String content) {
         return Boolean.TRUE.equals(tx.execute(s -> {
+            memoryTasks.touchForeground();
             var m = get(t.view().requestId(), t.user().getId());
             if (!Objects.equals(t.owner(), m.getExecutionOwner()) || m.getReplyStatus() == ReplyStatus.INTERRUPTED) return false;
             m.setContent(content); m.setReplyStatus(ReplyStatus.SUCCESS); m.setReplyError(null);
@@ -141,12 +170,30 @@ public class ReplyStore {
     }
 
     public void failure(Ticket t, String reason) {
-        tx.executeWithoutResult(s -> { var m = get(t.view().requestId(), t.user().getId());
+        tx.executeWithoutResult(s -> { memoryTasks.touchForeground(); var m = get(t.view().requestId(), t.user().getId());
             if (Objects.equals(t.owner(), m.getExecutionOwner())) fail(m, reason); });
     }
 
+    public void preparationFailure(Ticket t) {
+        tx.executeWithoutResult(s -> {
+            memoryTasks.touchForeground();var m=get(t.view().requestId(),t.user().getId());
+            if(!Objects.equals(t.owner(),m.getExecutionOwner()) || m.getPromptJson()!=null)return;
+            String problem=checkpoints.recoveryProblem(m);
+            if(problem!=null)fail(m,problem);
+            else {m.setReplyStatus(ReplyStatus.INTERRUPTED);m.setReplyError("准备阶段中断，将从已保存进度恢复");m.setExecutionOwner(null);m.setLeaseUntil(null);}
+        });
+    }
+
+    public Ticket resumePreparation(String id) {
+        return tx.execute(s -> {
+            memoryTasks.touchForeground();var m=messages.lockRequest(id).orElse(null);
+            if(m==null || m.getPromptJson()!=null)return null;
+            return claim(m);
+        });
+    }
+
     public void interrupt(Ticket t) {
-        tx.executeWithoutResult(s -> { var m = get(t.view().requestId(), t.user().getId());
+        tx.executeWithoutResult(s -> { memoryTasks.touchForeground(); var m = get(t.view().requestId(), t.user().getId());
             if (Objects.equals(t.owner(), m.getExecutionOwner()) && m.getReplyStatus() != ReplyStatus.SUCCESS) {
                 m.setReplyStatus(ReplyStatus.INTERRUPTED); m.setContent("");
                 pauseBudget(m);
@@ -162,8 +209,11 @@ public class ReplyStore {
     }
     private void expire(ChatMessage m) {
         if (m.getLeaseUntil() != null && m.getLeaseUntil().isBefore(Instant.now()) && m.getExecutionOwner() != null) {
-            if (m.getPromptJson() == null) fail(m, "准备过程被中断，请重新提交消息");
-            else { pauseBudget(m); m.setReplyStatus(ReplyStatus.INTERRUPTED); m.setExecutionOwner(null); m.setLeaseUntil(null); }
+            if (m.getPromptJson() == null) {
+                String problem=checkpoints.recoveryProblem(m);
+                if(problem!=null){fail(m,problem);return;}
+            }
+            pauseBudget(m); m.setReplyStatus(ReplyStatus.INTERRUPTED); m.setExecutionOwner(null); m.setLeaseUntil(null);
         }
     }
     private void pauseBudget(ChatMessage m) {
@@ -191,7 +241,7 @@ public class ReplyStore {
     }
     private View view(ChatMessage m) {
         return new View(m.getRequestId(), m.getId(), m.getSession().getPublicId(), m.getReplyStatus(), m.getAttempts(),
-                m.getGeneration(), m.getContent(), m.getReplyError(), m.getPromptJson() != null);
+                m.getGeneration(), m.getContent(), m.getReplyError(), m.getPromptJson() != null, m.getContinuationCount());
     }
     private Ticket ticket(ChatMessage m, String owner, boolean prepare) {
         List<AiMessage> prompt = List.of();

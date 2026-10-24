@@ -20,25 +20,31 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class AiClientConfig {
 
-    @Bean
     public AiClient aiClient(MindHarborProperties properties) {
+        return aiClient(properties, null, io.micrometer.observation.ObservationRegistry.NOOP);
+    }
+
+    @Bean
+    public AiClient aiClient(MindHarborProperties properties,
+            com.mindharbor.agent.service.ai.ModelCallTelemetry telemetry,
+            io.micrometer.observation.ObservationRegistry observations) {
         String provider = properties.getAi().getProvider().toLowerCase();
         if ("ollama".equals(provider)) {
-            OllamaChatModel model = ollamaChatModel(properties);
-            return new SpringAiChatClient(model, model);
+            OllamaChatModel model = ollamaChatModel(properties, observations);
+            return new SpringAiChatClient(model, model, telemetry, provider, properties.getAi().getOllama().getModel());
         }
         if ("openai".equals(provider)) {
             if (properties.getAi().getOpenai().getApiKey().isBlank()) {
                 throw new IllegalStateException("AI_PROVIDER=openai requires OPENAI_API_KEY.");
             }
-            OpenAiChatModel model = openAiChatModel(properties);
-            return new SpringAiChatClient(model, model);
+            OpenAiChatModel model = openAiChatModel(properties, observations);
+            return new SpringAiChatClient(model, model, telemetry, provider, properties.getAi().getOpenai().getModel());
         }
         throw new IllegalArgumentException(
                 "Unsupported AI_PROVIDER=" + provider + ". Supported providers: ollama, openai.");
     }
 
-    private OllamaChatModel ollamaChatModel(MindHarborProperties properties) {
+    private OllamaChatModel ollamaChatModel(MindHarborProperties properties, io.micrometer.observation.ObservationRegistry observations) {
         MindHarborProperties.Ollama ollama = properties.getAi().getOllama();
         OllamaApi api = OllamaApi.builder()
                 .baseUrl(ollama.getBaseUrl())
@@ -51,23 +57,26 @@ public class AiClientConfig {
                 .repeatPenalty(1.12)
                 .build();
         return OllamaChatModel.builder()
+                .observationRegistry(observations)
                 .ollamaApi(api)
                 .defaultOptions(options)
                 .build();
     }
 
-    private OpenAiChatModel openAiChatModel(MindHarborProperties properties) {
+    private OpenAiChatModel openAiChatModel(MindHarborProperties properties, io.micrometer.observation.ObservationRegistry observations) {
         MindHarborProperties.OpenAi openai = properties.getAi().getOpenai();
         OpenAiApi api = OpenAiApi.builder()
                 .baseUrl(openai.getBaseUrl())
                 .apiKey(openai.getApiKey())
                 .build();
         OpenAiChatOptions options = OpenAiChatOptions.builder()
+                .streamUsage(openai.isStreamUsage())
                 .model(openai.getModel())
                 .temperature(properties.getAi().getTemperature())
                 .maxTokens(properties.getAi().getMaxTokens())
                 .build();
         return OpenAiChatModel.builder()
+                .observationRegistry(observations)
                 .openAiApi(api)
                 .defaultOptions(options)
                 .build();

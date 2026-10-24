@@ -55,6 +55,9 @@ public class ChatMessage {
     private String requestInput;
     private Integer attempts = 0;
     private Integer generation = 1;
+    private Integer continuationCount = 0;
+    public int getContinuationCount() { return continuationCount == null ? 0 : continuationCount; }
+    public void setContinuationCount(int value) { continuationCount = value; }
     @Column(length = 64)
     private String executionOwner;
     private Instant leaseUntil;

@@ -12,6 +12,7 @@ import java.util.List;
  */
 public record AgentRunTraceResponse(
         String traceId,
+        String requestId,
         String sessionId,
         Long userId,
         String username,
@@ -32,6 +33,7 @@ public record AgentRunTraceResponse(
     public static AgentRunTraceResponse from(AgentRunTrace trace) {
         return new AgentRunTraceResponse(
                 trace.getTraceId(),
+                trace.getRequestId(),
                 trace.getSession().getPublicId(),
                 trace.getUser().getId(),
                 trace.getUser().getUsername(),

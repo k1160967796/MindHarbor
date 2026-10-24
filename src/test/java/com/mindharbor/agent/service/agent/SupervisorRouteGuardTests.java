@@ -65,13 +65,14 @@ class SupervisorRouteGuardTests {
     }
 
     @Test
-    void protectsFollowUpEvenWhenGeneralTaskShortcutSkipsModel() {
+    void protectsFollowUpWhenModelMisclassifiesGenericQuestion() {
         AiClient ai = mock(AiClient.class);
+        when(ai.complete(any())).thenReturn("CHAT");
         AgentContext context = context("如何解决这个问题", List.of(AiMessage.user("我考试压力很大")));
         new SupervisorAgent(new IntentClassifier(ai), new RouteGuard()).act(context);
         assertThat(context.intent()).isEqualTo(IntentType.CONSULT);
         assertThat(context.riskAssessed()).isFalse();
-        verifyNoInteractions(ai);
+        verify(ai).complete(any());
     }
 
     @Test

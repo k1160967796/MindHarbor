@@ -84,6 +84,7 @@ public class CompanionAgent implements MindHarborAgent {
                 回复策略：
                 %s
                 """.formatted(context.memoryBrief(), plan)));
+        messages.add(PromptTemplates.answerLengthRule());
         messages.addAll(context.modelHistory());
         return messages;
     }

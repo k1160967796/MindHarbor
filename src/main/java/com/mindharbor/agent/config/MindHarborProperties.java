@@ -122,6 +122,10 @@ public class MindHarborProperties {
         private String apiKey = "";
         /** OpenAI 聊天模型名称。 */
         private String model = "gpt-4o-mini";
+        private boolean streamUsage = true;
+
+        public boolean isStreamUsage() { return streamUsage; }
+        public void setStreamUsage(boolean value) { streamUsage = value; }
 
         public String getBaseUrl() {
             return baseUrl;
@@ -149,6 +153,12 @@ public class MindHarborProperties {
     }
 
     public static class Chat {
+        private int answerMaxTokens = 1024;
+        private int continuationMaxTokens = 512;
+        public int getAnswerMaxTokens() { return answerMaxTokens; }
+        public void setAnswerMaxTokens(int value) { answerMaxTokens = value; }
+        public int getContinuationMaxTokens() { return continuationMaxTokens; }
+        public void setContinuationMaxTokens(int value) { continuationMaxTokens = value; }
         /** 保留给模型的历史轮次数，服务层会换算成用户/助手消息条数。 */
         private int historyLimit = 10;
         /** Redis 短期记忆 TTL，过期后可从 MySQL 长期记忆恢复最近上下文。 */

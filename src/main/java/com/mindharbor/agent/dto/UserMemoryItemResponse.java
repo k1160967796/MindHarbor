@@ -15,7 +15,9 @@ public record UserMemoryItemResponse(
         double confidence,
         Instant createdAt,
         Instant updatedAt,
-        Instant lastSeenAt
+        Instant lastSeenAt,
+        String factKey,String value,String scope,String status,Long sourceMessageId,
+        Instant assertedAt,Instant effectiveAt,Instant expiresAt,long revision
 ) {
     public static UserMemoryItemResponse from(UserMemoryItem item) {
         return new UserMemoryItemResponse(
@@ -26,6 +28,7 @@ public record UserMemoryItemResponse(
                 item.getConfidence(),
                 item.getCreatedAt(),
                 item.getUpdatedAt(),
-                item.getLastSeenAt());
+                item.getLastSeenAt(),item.getFactKey(),item.getFactValue(),item.getFactScope(),item.statusAt(Instant.now()).name(),
+                item.getSourceMessageId(),item.getAssertedAt(),item.getEffectiveAt(),item.getExpiresAt(),item.getRevision());
     }
 }

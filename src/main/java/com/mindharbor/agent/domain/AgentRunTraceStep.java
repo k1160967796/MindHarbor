@@ -47,7 +47,7 @@ public class AgentRunTraceStep {
     private AgentAction action;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "LONGTEXT")
     private String observation;
 
     @Column(nullable = false, updatable = false)

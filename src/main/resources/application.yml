@@ -77,15 +77,25 @@ logging:
     root: INFO
 
 management:
+  metrics:
+    distribution:
+      percentiles:
+        mindharbor.model.call: 0.5,0.95,0.99
+        mindharbor.model.first.token: 0.5,0.95,0.99
   health:
     mail:
       enabled: false
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics
 
 mindharbor:
+  agent:
+    preparation-seconds: ${AGENT_PREPARATION_SECONDS:300}
+    step-timeout-ms: ${AGENT_STEP_TIMEOUT_MS:30000}
+    retry-delay-ms: ${AGENT_RETRY_DELAY_MS:500}
+    recovery-enabled: ${AGENT_RECOVERY_ENABLED:true}
   ai:
     provider: ${AI_PROVIDER:ollama}
     temperature: ${AI_TEMPERATURE:0.35}
@@ -97,15 +107,26 @@ mindharbor:
       base-url: ${OPENAI_BASE_URL:https://api.openai.com}
       api-key: ${OPENAI_API_KEY:}
       model: ${OPENAI_MODEL:gpt-4o-mini}
+      stream-usage: ${AI_OPENAI_STREAM_USAGE:true}
   chat:
+    answer-max-tokens: ${CHAT_ANSWER_MAX_TOKENS:1024}
+    continuation-max-tokens: ${CHAT_CONTINUATION_MAX_TOKENS:512}
     history-limit: ${CHAT_HISTORY_LIMIT:10}
     short-memory-ttl-hours: ${CHAT_SHORT_MEMORY_TTL_HOURS:24}
   memory:
+    background-enabled: ${MEMORY_BACKGROUND_ENABLED:true}
+    background-idle-ms: ${MEMORY_BACKGROUND_IDLE_MS:2000}
+    background-timeout-seconds: ${MEMORY_BACKGROUND_TIMEOUT_SECONDS:15}
+    summary-message-threshold: ${MEMORY_SUMMARY_MESSAGE_THRESHOLD:6}
+    summary-char-threshold: ${MEMORY_SUMMARY_CHAR_THRESHOLD:3000}
     use-chroma: ${MEMORY_USE_CHROMA:${USE_CHROMA:true}}
     chroma-base-url: ${MEMORY_CHROMA_BASE_URL:${CHROMA_BASE_URL:http://localhost:8000}}
     chroma-collection: ${MEMORY_CHROMA_COLLECTION:mindharbor_user_memory}
     top-k: ${MEMORY_TOP_K:6}
+    state-valid-days: ${MEMORY_STATE_VALID_DAYS:14}
+    context-valid-days: ${MEMORY_CONTEXT_VALID_DAYS:90}
   embedding:
+    local-warmup-enabled: ${EMBEDDING_LOCAL_WARMUP_ENABLED:true}
     base-url: ${OPENAI_BASE_URL:https://api.openai.com}
     api-key: ${OPENAI_API_KEY:}
     model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}

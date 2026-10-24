@@ -27,8 +27,11 @@ public class MemoryAgent implements MindHarborAgent {
     private final ShortTermMemoryService shortTermMemoryService;
     private final MindHarborProperties properties;
     private final PrivacySanitizer privacySanitizer;
-    private final AiClient aiClient;
     private final UserProfileMemoryService userProfileMemoryService;
+    private com.mindharbor.agent.service.memory.ConversationSummaryService summaries;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setSummaries(com.mindharbor.agent.service.memory.ConversationSummaryService summaries) {this.summaries=summaries;}
 
     public MemoryAgent(
             ChatMessageRepository chatMessageRepository,
@@ -42,7 +45,6 @@ public class MemoryAgent implements MindHarborAgent {
         this.shortTermMemoryService = shortTermMemoryService;
         this.properties = properties;
         this.privacySanitizer = privacySanitizer;
-        this.aiClient = aiClient;
         this.userProfileMemoryService = userProfileMemoryService;
     }
 
@@ -78,14 +80,16 @@ public class MemoryAgent implements MindHarborAgent {
         }
 
         String profileBrief = userProfileMemoryService.profileBrief(context.user(), context.modelInput());
-        String historyBrief = summarizeMemory(previousHistory, context.modelInput());
+        var recall=summaries==null ? com.mindharbor.agent.service.memory.ConversationSummaryService.fallback(previousHistory)
+                : summaries.read(context.session().getId(),context.modelInput(),previousHistory);
+        String historyBrief = recall.brief();
         context.setPreviousHistory(previousHistory);
-        context.setModelHistory(withCurrentUser(previousHistory, context.modelInput()));
+        context.setModelHistory(withCurrentUser(recall.history(), context.modelInput()));
         context.setMemoryBrief(combineMemoryBrief(profileBrief, historyBrief));
         context.markMemoryLoaded();
         return AgentDecision.continueWith(
                 AgentAction.READ_MEMORY,
-                "%s loaded %d messages; memory brief prepared".formatted(source, previousHistory.size()));
+                "%s loaded %d messages; memory=%s; summaryModelCalls=0".formatted(source, previousHistory.size(),recall.source()));
     }
 
     private List<ChatMessage> recentHistory(ChatSession session) {
@@ -105,32 +109,6 @@ public class MemoryAgent implements MindHarborAgent {
         return history.stream()
                 .skip(Math.max(0, history.size() - limit))
                 .toList();
-    }
-
-    private String summarizeMemory(List<AiMessage> history, String currentInput) {
-        if (history.isEmpty()) {
-            return "无相关历史记忆。";
-        }
-        try {
-            String summary = aiClient.complete(List.of(
-                    AiMessage.system("""
-                            你是 MindHarbor 的 MemoryAgent。
-                            你的任务是从最近对话中提取对当前输入有用的短期/长期记忆。
-                            只输出 1-3 条中文要点，不要输出风险等级、诊断结论或后台标签。
-                            如果历史与当前输入无关，只输出：无相关历史记忆。
-                            """),
-                    AiMessage.user("""
-                            当前输入：
-                            %s
-
-                            最近历史：
-                            %s
-                            """.formatted(currentInput, formatHistory(history)))
-            )).trim();
-            return summary.isBlank() ? "无相关历史记忆。" : shorten(summary, 400);
-        } catch (Exception ignored) {
-            return "无相关历史记忆。";
-        }
     }
 
     private String combineMemoryBrief(String profileBrief, String historyBrief) {

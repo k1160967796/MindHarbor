@@ -68,6 +68,7 @@ class ApiSseHarnessTests {
         scriptedAiClient = new ScriptedAiClient();
         when(aiClient.complete(anyList())).thenAnswer(invocation ->
                 scriptedAiClient.complete(invocation.getArgument(0)));
+        when(aiClient.streamAnswer(anyList(), org.mockito.ArgumentMatchers.anyInt())).thenCallRealMethod();
         when(aiClient.stream(anyList())).thenAnswer(invocation ->
                 scriptedAiClient.stream(invocation.getArgument(0)));
         when(shortTermMemoryService.recent(anyString())).thenReturn(List.of());
